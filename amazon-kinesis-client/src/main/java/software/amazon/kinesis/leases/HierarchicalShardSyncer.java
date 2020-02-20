@@ -34,6 +34,8 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.services.kinesis.model.Shard;
+import software.amazon.awssdk.services.kinesis.model.ShardFilter;
+import software.amazon.awssdk.services.kinesis.model.ShardFilterType;
 import software.amazon.awssdk.utils.CollectionUtils;
 import software.amazon.kinesis.annotations.KinesisClientInternalApi;
 import software.amazon.kinesis.common.InitialPositionInStream;
@@ -78,7 +80,7 @@ public class HierarchicalShardSyncer {
             final boolean cleanupLeasesOfCompletedShards, final boolean ignoreUnexpectedChildShards,
             final MetricsScope scope) throws DependencyException, InvalidStateException,
             ProvisionedThroughputException, KinesisClientLibIOException {
-        final List<Shard> latestShards = getShardList(shardDetector);
+        final List<Shard> latestShards = getShardList(shardDetector, initialPosition);
         checkAndCreateLeaseForNewShards(shardDetector, leaseRefresher, initialPosition, cleanupLeasesOfCompletedShards,
                                         ignoreUnexpectedChildShards, scope, latestShards);
     }
@@ -116,7 +118,7 @@ public class HierarchicalShardSyncer {
         }
         final List<Lease> trackedLeases = new ArrayList<>(currentLeases);
         trackedLeases.addAll(newLeasesToCreate);
-        cleanupGarbageLeases(shardDetector, latestShards, trackedLeases, leaseRefresher);
+        cleanupGarbageLeases(shardDetector, latestShards, trackedLeases, leaseRefresher, initialPosition);
         if (cleanupLeasesOfCompletedShards) {
             cleanupLeasesOfFinishedShards(currentLeases, shardIdToShardMap, shardIdToChildShardIdsMap, trackedLeases, leaseRefresher);
         }
@@ -253,8 +255,32 @@ public class HierarchicalShardSyncer {
         return shardIdToChildShardIdsMap;
     }
 
-    private static List<Shard> getShardList(@NonNull final ShardDetector shardDetector) throws KinesisClientLibIOException {
-        final List<Shard> shards = shardDetector.listShards();
+    private static ShardFilter getShardFilterFromInitialPosition(InitialPositionInStreamExtended initialPositionInStreamExtended) {
+
+        ShardFilter.Builder builder = ShardFilter.builder();
+
+        switch (initialPositionInStreamExtended.getInitialPositionInStream()) {
+            case LATEST:
+                builder = builder.type(ShardFilterType.AT_LATEST);
+                break;
+            case TRIM_HORIZON:
+                builder = builder.type(ShardFilterType.FROM_TRIM_HORIZON);
+                break;
+            case AT_TIMESTAMP:
+                builder = builder.type(ShardFilterType.AT_TIMESTAMP).timestamp(initialPositionInStreamExtended.getTimestamp().toInstant());
+                break;
+        }
+
+        return builder.build();
+
+    }
+
+    private static List<Shard> getShardList(@NonNull final ShardDetector shardDetector, InitialPositionInStreamExtended initialPositionInStreamExtended)
+            throws KinesisClientLibIOException {
+
+        final ShardFilter shardFilter = getShardFilterFromInitialPosition(initialPositionInStreamExtended);
+        final List<Shard> shards = shardDetector.listShardsWithFilter(shardFilter);
+
         if (shards == null) {
             throw new KinesisClientLibIOException(
                     "Stream is not in ACTIVE OR UPDATING state - will retry getting the shard list.");
@@ -519,8 +545,8 @@ public class HierarchicalShardSyncer {
      * @throws DependencyException
      */
     private static void cleanupGarbageLeases(@NonNull final ShardDetector shardDetector, final List<Shard> shards,
-            final List<Lease> trackedLeases, final LeaseRefresher leaseRefresher) throws KinesisClientLibIOException,
-            DependencyException, InvalidStateException, ProvisionedThroughputException {
+            final List<Lease> trackedLeases, final LeaseRefresher leaseRefresher, final InitialPositionInStreamExtended initialPosition)
+            throws KinesisClientLibIOException, DependencyException, InvalidStateException, ProvisionedThroughputException {
         final Set<String> kinesisShards = shards.stream().map(Shard::shardId).collect(Collectors.toSet());
 
         // Check if there are leases for non-existent shards
@@ -530,7 +556,7 @@ public class HierarchicalShardSyncer {
         if (!CollectionUtils.isNullOrEmpty(garbageLeases)) {
             log.info("Found {} candidate leases for cleanup. Refreshing list of" 
                     + " Kinesis shards to pick up recent/latest shards", garbageLeases.size());
-            final Set<String> currentKinesisShardIds = getShardList(shardDetector).stream().map(Shard::shardId)
+            final Set<String> currentKinesisShardIds = getShardList(shardDetector, initialPosition).stream().map(Shard::shardId)
                     .collect(Collectors.toSet());
 
             for (Lease lease : garbageLeases) {

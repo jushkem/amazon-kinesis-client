@@ -49,6 +49,7 @@ import org.mockito.runners.MockitoJUnitRunner;
 import software.amazon.awssdk.services.cloudwatch.CloudWatchAsyncClient;
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient;
 import software.amazon.awssdk.services.kinesis.KinesisAsyncClient;
+import software.amazon.awssdk.services.kinesis.model.ShardFilter;
 import software.amazon.kinesis.checkpoint.Checkpoint;
 import software.amazon.kinesis.checkpoint.CheckpointConfig;
 import software.amazon.kinesis.checkpoint.CheckpointFactory;
@@ -242,11 +243,9 @@ public class SchedulerTest {
     @Test
     public final void testInitializationFailureWithRetries() throws Exception {
         doNothing().when(leaseCoordinator).initialize();
-        when(shardDetector.listShards()).thenThrow(new RuntimeException());
-
+        when(shardDetector.listShardsWithFilter(any(ShardFilter.class))).thenThrow(new RuntimeException());
         scheduler.run();
-
-        verify(shardDetector, times(coordinatorConfig.maxInitializationAttempts())).listShards();
+        verify(shardDetector, times(coordinatorConfig.maxInitializationAttempts())).listShardsWithFilter(any(ShardFilter.class));
     }
 
     @Test
@@ -257,12 +256,12 @@ public class SchedulerTest {
                 metricsConfig, processorConfig, retrievalConfig);
 
         doNothing().when(leaseCoordinator).initialize();
-        when(shardDetector.listShards()).thenThrow(new RuntimeException());
+        when(shardDetector.listShardsWithFilter(any(ShardFilter.class))).thenThrow(new RuntimeException());
 
         scheduler.run();
 
         // verify initialization was retried for maxInitializationAttempts times
-        verify(shardDetector, times(maxInitializationAttempts)).listShards();
+        verify(shardDetector, times(maxInitializationAttempts)).listShardsWithFilter(any(ShardFilter.class));
     }
 
     @Test
