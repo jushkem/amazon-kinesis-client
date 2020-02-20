@@ -267,7 +267,7 @@ public class HierarchicalShardSyncer {
                 builder = builder.type(ShardFilterType.FROM_TRIM_HORIZON);
                 break;
             case AT_TIMESTAMP:
-                builder = builder.type(ShardFilterType.AT_TIMESTAMP).timestamp(initialPositionInStreamExtended.getTimestamp().toInstant());
+                builder = builder.type(ShardFilterType.FROM_TIMESTAMP).timestamp(initialPositionInStreamExtended.getTimestamp().toInstant());
                 break;
         }
 
