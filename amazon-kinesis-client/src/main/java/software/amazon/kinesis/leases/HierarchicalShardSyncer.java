@@ -80,7 +80,7 @@ public class HierarchicalShardSyncer {
             final boolean cleanupLeasesOfCompletedShards, final boolean ignoreUnexpectedChildShards,
             final MetricsScope scope) throws DependencyException, InvalidStateException,
             ProvisionedThroughputException, KinesisClientLibIOException {
-        final List<Shard> latestShards = getShardList(shardDetector, initialPosition);
+        final List<Shard> latestShards = getShardList(shardDetector, leaseRefresher.isLeaseTableEmpty(), initialPosition);
         checkAndCreateLeaseForNewShards(shardDetector, leaseRefresher, initialPosition, cleanupLeasesOfCompletedShards,
                                         ignoreUnexpectedChildShards, scope, latestShards);
     }
@@ -275,11 +275,13 @@ public class HierarchicalShardSyncer {
 
     }
 
-    private static List<Shard> getShardList(@NonNull final ShardDetector shardDetector, InitialPositionInStreamExtended initialPositionInStreamExtended)
+    private static List<Shard> getShardList(@NonNull final ShardDetector shardDetector, boolean leaseTableIsEmpty,
+                                            InitialPositionInStreamExtended initialPositionInStreamExtended)
             throws KinesisClientLibIOException {
 
         final ShardFilter shardFilter = getShardFilterFromInitialPosition(initialPositionInStreamExtended);
-        final List<Shard> shards = shardDetector.listShardsWithFilter(shardFilter);
+
+        final List<Shard> shards = leaseTableIsEmpty ? shardDetector.listShardsWithFilter(shardFilter) : shardDetector.listShards();
 
         if (shards == null) {
             throw new KinesisClientLibIOException(
@@ -556,7 +558,7 @@ public class HierarchicalShardSyncer {
         if (!CollectionUtils.isNullOrEmpty(garbageLeases)) {
             log.info("Found {} candidate leases for cleanup. Refreshing list of" 
                     + " Kinesis shards to pick up recent/latest shards", garbageLeases.size());
-            final Set<String> currentKinesisShardIds = getShardList(shardDetector, initialPosition).stream().map(Shard::shardId)
+            final Set<String> currentKinesisShardIds = getShardList(shardDetector, leaseRefresher.isLeaseTableEmpty(), initialPosition).stream().map(Shard::shardId)
                     .collect(Collectors.toSet());
 
             for (Lease lease : garbageLeases) {
