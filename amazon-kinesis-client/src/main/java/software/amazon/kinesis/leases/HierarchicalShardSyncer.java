@@ -27,6 +27,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.apache.commons.lang3.StringUtils;
 
@@ -103,8 +104,10 @@ public class HierarchicalShardSyncer {
         }
 
         final List<Lease> currentLeases = leaseRefresher.listLeases();
+        final List<Lease> newLeasesToCreate = currentLeases.isEmpty() ?
+                determineNewLeasesToCreateWithPartialShardMap(latestShards, currentLeases, initialPosition, inconsistentShardIds) :
+                determineNewLeasesToCreateWithFullShardMap(latestShards, currentLeases, initialPosition, inconsistentShardIds);
 
-        final List<Lease> newLeasesToCreate = determineNewLeasesToCreate(latestShards, currentLeases, initialPosition, inconsistentShardIds);
         log.debug("Num new leases to create: {}", newLeasesToCreate.size());
         for (Lease lease : newLeasesToCreate) {
             long startTime = System.currentTimeMillis();
@@ -290,6 +293,40 @@ public class HierarchicalShardSyncer {
         return shards;
     }
 
+
+
+    /**
+     * Determine new leases to create and their initial checkpoint using a snapshot of shards in the stream based on
+     * initialPosition.
+     * Note: Package level access only for testing purposes.
+     */
+    static List<Lease> determineNewLeasesToCreateWithPartialShardMap(final List<Shard> shards, final List<Lease> currentLeases,
+                                                                  final InitialPositionInStreamExtended initialPosition) {
+        final Set<String> inconsistentShardIds = new HashSet<>();
+        return determineNewLeasesToCreateWithPartialShardMap(shards, currentLeases, initialPosition, inconsistentShardIds);
+    }
+
+    /**
+     * Determine new leases to create and their initial checkpoints. For cases where the lease table is empty,
+     * we only need to read a partial snapshot of the shardmap at a given epoch, and checkponit the shards at
+     * the stream's initialPosition. For any closed shards, we will hit SHARD_END and discover their child shards
+     * through child shard information returned from GetRecords.
+     * */
+
+    static List<Lease> determineNewLeasesToCreateWithPartialShardMap(final List<Shard> shards, final List<Lease> currentLeases,
+                                                                  final InitialPositionInStreamExtended initialPosition, final Set<String> inconsistentShardIds) {
+        final Map<String, Shard> shardIdToShardMapOfAllKinesisShards = constructShardIdToShardMap(shards);
+
+        currentLeases.stream().peek(lease -> log.debug("Existing lease: {}", lease));
+
+        final List<Lease> newLeasesToCreate = getLeasesToCreateForShards(initialPosition, shards);
+
+        final Comparator<Lease> startingSequenceNumberComparator = new StartingSequenceNumberAndShardIdBasedComparator(
+                shardIdToShardMapOfAllKinesisShards);
+        newLeasesToCreate.sort(startingSequenceNumberComparator);
+        return newLeasesToCreate;
+    }
+
     /**
      * Determine new leases to create and their initial checkpoint.
      * Note: Package level access only for testing purposes.
@@ -337,15 +374,38 @@ public class HierarchicalShardSyncer {
      * @param inconsistentShardIds Set of child shard ids having open parents.
      * @return List of new leases to create sorted by starting sequenceNumber of the corresponding shard
      */
-    static List<Lease> determineNewLeasesToCreate(final List<Shard> shards, final List<Lease> currentLeases,
-            final InitialPositionInStreamExtended initialPosition, final Set<String> inconsistentShardIds) {
-        final Map<String, Lease> shardIdToNewLeaseMap = new HashMap<>();
+    static List<Lease> determineNewLeasesToCreateWithFullShardMap(final List<Shard> shards, final List<Lease> currentLeases,
+                                                                  final InitialPositionInStreamExtended initialPosition, final Set<String> inconsistentShardIds) {
         final Map<String, Shard> shardIdToShardMapOfAllKinesisShards = constructShardIdToShardMap(shards);
 
         final Set<String> shardIdsOfCurrentLeases = currentLeases.stream()
                 .peek(lease -> log.debug("Existing lease: {}", lease)).map(Lease::leaseKey).collect(Collectors.toSet());
 
         final List<Shard> openShards = getOpenShards(shards);
+        final List<Lease> newLeasesToCreate = getLeasesToCreateFromOpenShards(initialPosition, inconsistentShardIds,
+                shardIdToShardMapOfAllKinesisShards, shardIdsOfCurrentLeases, openShards);
+        final Comparator<Lease> startingSequenceNumberComparator = new StartingSequenceNumberAndShardIdBasedComparator(
+                shardIdToShardMapOfAllKinesisShards);
+        newLeasesToCreate.sort(startingSequenceNumberComparator);
+        return newLeasesToCreate;
+    }
+
+    /**
+     * Returns all leases to be created from an open shard map, assumes that openShards is a complete history of all
+     * shards in the stream.
+     * @param initialPosition
+     * @param inconsistentShardIds
+     * @param shardIdToShardMapOfAllKinesisShards
+     * @param shardIdsOfCurrentLeases
+     * @param openShards
+     * @return
+     */
+    private static List<Lease> getLeasesToCreateFromOpenShards(InitialPositionInStreamExtended initialPosition,
+                                                               Set<String> inconsistentShardIds,
+                                                               Map<String, Shard> shardIdToShardMapOfAllKinesisShards,
+                                                               Set<String> shardIdsOfCurrentLeases, List<Shard> openShards) {
+
+        final Map<String, Lease> shardIdToNewLeaseMap = new HashMap<>();
         final Map<String, Boolean> memoizationContext = new HashMap<>();
 
         // Iterate over the open shards and find those that don't have any lease entries.
@@ -397,28 +457,43 @@ public class HierarchicalShardSyncer {
             }
         }
 
-        final List<Lease> newLeasesToCreate = new ArrayList<>(shardIdToNewLeaseMap.values());
-        final Comparator<Lease> startingSequenceNumberComparator = new StartingSequenceNumberAndShardIdBasedComparator(
-                shardIdToShardMapOfAllKinesisShards);
-        newLeasesToCreate.sort(startingSequenceNumberComparator);
-        return newLeasesToCreate;
+        return new ArrayList(shardIdToNewLeaseMap.values());
+    }
+
+    /**
+     * Helper method to create leases for all shards, regardless of if they are open or closed.
+     */
+    private static List<Lease> getLeasesToCreateForShards(InitialPositionInStreamExtended initialPosition, List<Shard> shards)  {
+        final Map<String, Lease> shardIdToNewLeaseMap = new HashMap<>();
+
+        for (Shard shard : shards) {
+            final String shardId = shard.shardId();
+            final Lease lease = newKCLLease(shard);
+            lease.checkpoint(convertToCheckpoint(initialPosition));
+
+            log.debug("Need to create a lease for shard with shardId {}", shardId);
+
+            shardIdToNewLeaseMap.put(shardId, lease);
+        }
+
+        return new ArrayList(shardIdToNewLeaseMap.values());
     }
 
     /**
      * Determine new leases to create and their initial checkpoint.
      * Note: Package level access only for testing purposes.
      */
-    static List<Lease> determineNewLeasesToCreate(final List<Shard> shards, final List<Lease> currentLeases,
-            final InitialPositionInStreamExtended initialPosition) {
+    static List<Lease> determineNewLeasesToCreateWithFullShardMap(final List<Shard> shards, final List<Lease> currentLeases,
+                                                                  final InitialPositionInStreamExtended initialPosition) {
         final Set<String> inconsistentShardIds = new HashSet<>();
-        return determineNewLeasesToCreate(shards, currentLeases, initialPosition, inconsistentShardIds);
+        return determineNewLeasesToCreateWithFullShardMap(shards, currentLeases, initialPosition, inconsistentShardIds);
     }
 
     /**
      * Note: Package level access for testing purposes only.
      * Check if this shard is a descendant of a shard that is (or will be) processed.
      * Create leases for the ancestors of this shard as required.
-     * See javadoc of determineNewLeasesToCreate() for rules and example.
+     * See javadoc of determineNewLeasesToCreateWithFullShardMap() for rules and example.
      * 
      * @param shardId The shardId to check.
      * @param initialPosition One of LATEST, TRIM_HORIZON, or AT_TIMESTAMP. We'll start fetching records from that

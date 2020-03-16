@@ -243,9 +243,9 @@ public class SchedulerTest {
     @Test
     public final void testInitializationFailureWithRetries() throws Exception {
         doNothing().when(leaseCoordinator).initialize();
-        when(shardDetector.listShardsWithFilter(any(ShardFilter.class))).thenThrow(new RuntimeException());
+        when(shardDetector.listShards()).thenThrow(new RuntimeException());
         scheduler.run();
-        verify(shardDetector, times(coordinatorConfig.maxInitializationAttempts())).listShardsWithFilter(any(ShardFilter.class));
+        verify(shardDetector, times(coordinatorConfig.maxInitializationAttempts())).listShards();
     }
 
     @Test
@@ -256,12 +256,12 @@ public class SchedulerTest {
                 metricsConfig, processorConfig, retrievalConfig);
 
         doNothing().when(leaseCoordinator).initialize();
-        when(shardDetector.listShardsWithFilter(any(ShardFilter.class))).thenThrow(new RuntimeException());
+        when(shardDetector.listShards()).thenThrow(new RuntimeException());
 
         scheduler.run();
 
         // verify initialization was retried for maxInitializationAttempts times
-        verify(shardDetector, times(maxInitializationAttempts)).listShardsWithFilter(any(ShardFilter.class));
+        verify(shardDetector, times(maxInitializationAttempts)).listShards();
     }
 
     @Test
