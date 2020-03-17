@@ -24,10 +24,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import org.apache.commons.lang3.StringUtils;
 
@@ -60,6 +60,14 @@ import software.amazon.kinesis.retrieval.kpl.ExtendedSequenceNumber;
 @KinesisClientInternalApi
 public class HierarchicalShardSyncer {
 
+    public synchronized void checkAndCreateLeasesForNewShardsWithFullShardMap(@NonNull final ShardDetector shardDetector,
+            final LeaseRefresher leaseRefresher, final InitialPositionInStreamExtended initialPosition, final boolean cleanupLeasesOfCompletedShards,
+            final boolean ignoreUnexpectedChildShards, final MetricsScope scope, List<Shard> latestShards)
+            throws DependencyException, ProvisionedThroughputException, InvalidStateException {
+        updateLeaseTableWithNewLeasesWithFullShardMap(shardDetector, leaseRefresher, initialPosition, cleanupLeasesOfCompletedShards,
+                ignoreUnexpectedChildShards, scope, latestShards);
+    }
+
     /**
      * Check and create leases for any new shards (e.g. following a reshard operation). Sync leases with Kinesis shards
      * (e.g. at startup, or when we reach end of a shard).
@@ -75,22 +83,46 @@ public class HierarchicalShardSyncer {
      * @throws ProvisionedThroughputException
      * @throws KinesisClientLibIOException
      */
-    // CHECKSTYLE:OFF CyclomaticComplexity
-    public synchronized void checkAndCreateLeaseForNewShards(@NonNull final ShardDetector shardDetector,
+    public synchronized void checkAndCreateLeasesForNewShardsWithFullShardMap(@NonNull final ShardDetector shardDetector,
             final LeaseRefresher leaseRefresher, final InitialPositionInStreamExtended initialPosition,
             final boolean cleanupLeasesOfCompletedShards, final boolean ignoreUnexpectedChildShards,
             final MetricsScope scope) throws DependencyException, InvalidStateException,
             ProvisionedThroughputException, KinesisClientLibIOException {
-        final List<Shard> latestShards = getShardList(shardDetector, leaseRefresher.isLeaseTableEmpty(), initialPosition);
-        checkAndCreateLeaseForNewShards(shardDetector, leaseRefresher, initialPosition, cleanupLeasesOfCompletedShards,
-                                        ignoreUnexpectedChildShards, scope, latestShards);
+
+        final List<Shard> latestShards = getFullShardList(shardDetector);
+
+        updateLeaseTableWithNewLeasesWithFullShardMap(shardDetector, leaseRefresher, initialPosition, cleanupLeasesOfCompletedShards,
+                ignoreUnexpectedChildShards, scope, latestShards);
+
     }
 
-    //Provide a pre-collcted list of shards to avoid calling ListShards API
-    public synchronized void checkAndCreateLeaseForNewShards(@NonNull final ShardDetector shardDetector,
+    public synchronized void checkAndCreateLeasesForNewShardsWithPartialShardMap(@NonNull final ShardDetector shardDetector,
             final LeaseRefresher leaseRefresher, final InitialPositionInStreamExtended initialPosition, final boolean cleanupLeasesOfCompletedShards,
-            final boolean ignoreUnexpectedChildShards, final MetricsScope scope, List<Shard> latestShards)throws DependencyException, InvalidStateException,
+            final boolean ignoreUnexpectedChildShards, final MetricsScope scope, List<Shard> latestShards)
+            throws DependencyException, ProvisionedThroughputException, InvalidStateException {
+
+        updateLeaseTableWithNewLeasesWithPartialShardMap(shardDetector, leaseRefresher, initialPosition, cleanupLeasesOfCompletedShards,
+                ignoreUnexpectedChildShards, scope, latestShards);
+    }
+
+    public synchronized void checkAndCreateLeasesForNewShardsWithPartialShardMap(@NonNull final ShardDetector shardDetector,
+            final LeaseRefresher leaseRefresher, final InitialPositionInStreamExtended initialPosition,
+            final boolean cleanupLeasesOfCompletedShards, final boolean ignoreUnexpectedChildShards,
+            final MetricsScope scope) throws DependencyException, InvalidStateException,
             ProvisionedThroughputException, KinesisClientLibIOException {
+
+        final List<Shard> latestShards = getShardListAtInitialPosition(shardDetector, initialPosition);
+
+        updateLeaseTableWithNewLeasesWithPartialShardMap(shardDetector, leaseRefresher, initialPosition, cleanupLeasesOfCompletedShards,
+                ignoreUnexpectedChildShards, scope, latestShards);
+
+    }
+
+    private void updateLeaseTableWithNewLeasesWithFullShardMap(@NonNull ShardDetector shardDetector, LeaseRefresher leaseRefresher,
+            InitialPositionInStreamExtended initialPosition, boolean cleanupLeasesOfCompletedShards,
+            boolean ignoreUnexpectedChildShards, MetricsScope scope, List<Shard> latestShards)
+            throws DependencyException, InvalidStateException, ProvisionedThroughputException {
+
         if (!CollectionUtils.isNullOrEmpty(latestShards)) {
             log.debug("Num shards: {}", latestShards.size());
         }
@@ -104,9 +136,43 @@ public class HierarchicalShardSyncer {
         }
 
         final List<Lease> currentLeases = leaseRefresher.listLeases();
-        final List<Lease> newLeasesToCreate = currentLeases.isEmpty() ?
-                determineNewLeasesToCreateWithPartialShardMap(latestShards, currentLeases, initialPosition, inconsistentShardIds) :
-                determineNewLeasesToCreateWithFullShardMap(latestShards, currentLeases, initialPosition, inconsistentShardIds);
+        final List<Lease> newLeasesToCreate = determineNewLeasesToCreateWithFullShardMap(latestShards, currentLeases,
+                initialPosition, inconsistentShardIds);
+
+        createNewLeasesAndGarbageCollect(shardDetector, leaseRefresher, initialPosition, cleanupLeasesOfCompletedShards,
+                scope, latestShards, shardIdToShardMap, shardIdToChildShardIdsMap, currentLeases, newLeasesToCreate);
+    }
+
+    private void updateLeaseTableWithNewLeasesWithPartialShardMap(@NonNull ShardDetector shardDetector, LeaseRefresher leaseRefresher,
+            InitialPositionInStreamExtended initialPosition, boolean cleanupLeasesOfCompletedShards,
+            boolean ignoreUnexpectedChildShards, MetricsScope scope, List<Shard> latestShards)
+            throws DependencyException, InvalidStateException, ProvisionedThroughputException {
+
+        if (!CollectionUtils.isNullOrEmpty(latestShards)) {
+            log.debug("Num shards: {}", latestShards.size());
+        }
+
+        final Map<String, Shard> shardIdToShardMap = constructShardIdToShardMap(latestShards);
+        final Map<String, Set<String>> shardIdToChildShardIdsMap = constructShardIdToChildShardIdsMap(
+                shardIdToShardMap);
+        final Set<String> inconsistentShardIds = findInconsistentShardIds(shardIdToChildShardIdsMap, shardIdToShardMap);
+        if (!ignoreUnexpectedChildShards) {
+            assertAllParentShardsAreClosed(inconsistentShardIds);
+        }
+
+        final List<Lease> currentLeases = leaseRefresher.listLeases();
+        final List<Lease> newLeasesToCreate = determineNewLeasesToCreateWithPartialShardMap(latestShards, currentLeases,
+                        initialPosition, inconsistentShardIds);
+
+        createNewLeasesAndGarbageCollect(shardDetector, leaseRefresher, initialPosition, cleanupLeasesOfCompletedShards,
+                scope, latestShards, shardIdToShardMap, shardIdToChildShardIdsMap, currentLeases, newLeasesToCreate);
+    }
+
+    private void createNewLeasesAndGarbageCollect(@NonNull ShardDetector shardDetector, LeaseRefresher leaseRefresher,
+        InitialPositionInStreamExtended initialPosition, boolean cleanupLeasesOfCompletedShards, MetricsScope scope,
+        List<Shard> latestShards, Map<String, Shard> shardIdToShardMap, Map<String, Set<String>> shardIdToChildShardIdsMap,
+        List<Lease> currentLeases, List<Lease> newLeasesToCreate)
+        throws DependencyException, InvalidStateException, ProvisionedThroughputException {
 
         log.debug("Num new leases to create: {}", newLeasesToCreate.size());
         for (Lease lease : newLeasesToCreate) {
@@ -125,8 +191,8 @@ public class HierarchicalShardSyncer {
         if (cleanupLeasesOfCompletedShards) {
             cleanupLeasesOfFinishedShards(currentLeases, shardIdToShardMap, shardIdToChildShardIdsMap, trackedLeases, leaseRefresher);
         }
-
     }
+
     // CHECKSTYLE:ON CyclomaticComplexity
 
     /** Helper method to detect a race condition between fetching the shards via paginated DescribeStream calls
@@ -278,21 +344,24 @@ public class HierarchicalShardSyncer {
 
     }
 
-    private static List<Shard> getShardList(@NonNull final ShardDetector shardDetector, boolean leaseTableIsEmpty,
-                                            InitialPositionInStreamExtended initialPositionInStreamExtended)
+    private static List<Shard> getShardListAtInitialPosition(@NonNull final ShardDetector shardDetector,
+                                                             InitialPositionInStreamExtended initialPositionInStreamExtended)
             throws KinesisClientLibIOException {
 
         final ShardFilter shardFilter = getShardFilterFromInitialPosition(initialPositionInStreamExtended);
+        final Optional<List<Shard>> shards = Optional.of(shardDetector.listShardsWithFilter(shardFilter));
 
-        final List<Shard> shards = leaseTableIsEmpty ? shardDetector.listShardsWithFilter(shardFilter) : shardDetector.listShards();
-
-        if (shards == null) {
-            throw new KinesisClientLibIOException(
-                    "Stream is not in ACTIVE OR UPDATING state - will retry getting the shard list.");
-        }
-        return shards;
+        return shards.orElseThrow(() -> new KinesisClientLibIOException("Stream is not in ACTIVE OR UPDATING state - " +
+                "will retry getting the shard list."));
     }
 
+    private static List<Shard> getFullShardList(@NonNull final ShardDetector shardDetector) throws KinesisClientLibIOException {
+
+        final Optional<List<Shard>> shards = Optional.of(shardDetector.listShards());
+
+        return shards.orElseThrow(() -> new KinesisClientLibIOException("Stream is not in ACTIVE OR UPDATING state - " +
+                "will retry getting the shard list."));
+    }
 
 
     /**
@@ -308,7 +377,7 @@ public class HierarchicalShardSyncer {
 
     /**
      * Determine new leases to create and their initial checkpoints. For cases where the lease table is empty,
-     * we only need to read a partial snapshot of the shardmap at a given epoch, and checkponit the shards at
+     * we only need to read a partial snapshot of the shardmap at a given epoch, and checkpoint the shards at
      * the stream's initialPosition. For any closed shards, we will hit SHARD_END and discover their child shards
      * through child shard information returned from GetRecords.
      * */
@@ -633,7 +702,7 @@ public class HierarchicalShardSyncer {
         if (!CollectionUtils.isNullOrEmpty(garbageLeases)) {
             log.info("Found {} candidate leases for cleanup. Refreshing list of" 
                     + " Kinesis shards to pick up recent/latest shards", garbageLeases.size());
-            final Set<String> currentKinesisShardIds = getShardList(shardDetector, leaseRefresher.isLeaseTableEmpty(), initialPosition).stream().map(Shard::shardId)
+            final Set<String> currentKinesisShardIds = getFullShardList(shardDetector).stream().map(Shard::shardId)
                     .collect(Collectors.toSet());
 
             for (Lease lease : garbageLeases) {

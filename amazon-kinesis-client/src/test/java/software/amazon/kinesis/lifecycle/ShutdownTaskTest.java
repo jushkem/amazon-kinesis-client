@@ -123,7 +123,7 @@ public class ShutdownTaskTest {
 
     /**
      * Test method for {@link ShutdownTask#call()}.
-     * This test is for the scenario that checkAndCreateLeaseForNewShards throws an exception.
+     * This test is for the scenario that checkAndCreateLeasesForNewShardsWithFullShardMap throws an exception.
      */
     @Test
     public final void testCallWhenSyncingShardsThrows() throws Exception {
@@ -135,7 +135,7 @@ public class ShutdownTaskTest {
         doAnswer((invocation) -> {
             throw new KinesisClientLibIOException("KinesisClientLibIOException");
         }).when(hierarchicalShardSyncer)
-                .checkAndCreateLeaseForNewShards(shardDetector, leaseRefresher, INITIAL_POSITION_TRIM_HORIZON,
+                .checkAndCreateLeasesForNewShardsWithFullShardMap(shardDetector, leaseRefresher, INITIAL_POSITION_TRIM_HORIZON,
                         cleanupLeasesOfCompletedShards, ignoreUnexpectedChildShards,
                         NULL_METRICS_FACTORY.createMetrics(), latestShards);
 

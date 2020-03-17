@@ -40,7 +40,7 @@ public class ShardSyncer {
             final boolean cleanupLeasesOfCompletedShards, final boolean ignoreUnexpectedChildShards,
             final MetricsScope scope) throws DependencyException, InvalidStateException, ProvisionedThroughputException,
             KinesisClientLibIOException {
-        HIERARCHICAL_SHARD_SYNCER.checkAndCreateLeaseForNewShards(shardDetector, leaseRefresher, initialPosition,
+        HIERARCHICAL_SHARD_SYNCER.checkAndCreateLeasesForNewShardsWithFullShardMap(shardDetector, leaseRefresher, initialPosition,
                 cleanupLeasesOfCompletedShards, ignoreUnexpectedChildShards, scope);
     }
 }
