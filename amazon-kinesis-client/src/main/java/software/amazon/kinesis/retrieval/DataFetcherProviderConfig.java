@@ -15,14 +15,34 @@
 
 package software.amazon.kinesis.retrieval;
 
-import java.util.function.Function;
-import software.amazon.kinesis.retrieval.polling.DataFetcher;
+import java.time.Duration;
+import software.amazon.kinesis.common.StreamIdentifier;
+import software.amazon.kinesis.metrics.MetricsFactory;
 
-public interface RetrievalSpecificConfig {
+public interface DataFetcherProviderConfig {
+
     /**
-     * Creates and returns a retrieval factory for the specific configuration
-     *
-     * @return a retrieval factory that can create an appropriate retriever
+    * Gets stream identifier for dataFetcher.
+    */
+    StreamIdentifier getStreamIdentifier();
+
+    /**
+    * Gets shard id.
+    */
+    String getShardId();
+
+    /**
+     * Gets current instance of metrics factory.
      */
-    RetrievalFactory retrievalFactory();
+    MetricsFactory getMetricsFactory();
+
+    /**
+     * Gets current max records allowed to process at a given time.
+     */
+    Integer getMaxRecords();
+
+    /**
+     * Gets timeout for kinesis request.
+     */
+    Duration getKinesisRequestTimeout();
 }

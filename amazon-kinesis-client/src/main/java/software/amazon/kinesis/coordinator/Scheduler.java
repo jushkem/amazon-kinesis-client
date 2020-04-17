@@ -15,6 +15,10 @@
 
 package software.amazon.kinesis.coordinator;
 
+import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Stopwatch;
+
+import io.reactivex.plugins.RxJavaPlugins;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -33,11 +37,6 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-
-import com.google.common.annotations.VisibleForTesting;
-
-import com.google.common.base.Stopwatch;
-import io.reactivex.plugins.RxJavaPlugins;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -51,6 +50,7 @@ import software.amazon.kinesis.common.InitialPositionInStream;
 import software.amazon.kinesis.common.InitialPositionInStreamExtended;
 import software.amazon.kinesis.common.StreamConfig;
 import software.amazon.kinesis.common.StreamIdentifier;
+import software.amazon.kinesis.leases.HierarchicalShardSyncer;
 import software.amazon.kinesis.leases.Lease;
 import software.amazon.kinesis.leases.LeaseCoordinator;
 import software.amazon.kinesis.leases.LeaseManagementConfig;
@@ -62,7 +62,6 @@ import software.amazon.kinesis.leases.ShardInfo;
 import software.amazon.kinesis.leases.ShardPrioritization;
 import software.amazon.kinesis.leases.ShardSyncTask;
 import software.amazon.kinesis.leases.ShardSyncTaskManager;
-import software.amazon.kinesis.leases.HierarchicalShardSyncer;
 import software.amazon.kinesis.leases.dynamodb.DynamoDBLeaseCoordinator;
 import software.amazon.kinesis.leases.dynamodb.DynamoDBLeaseSerializer;
 import software.amazon.kinesis.leases.dynamodb.DynamoDBMultiStreamLeaseSerializer;
@@ -312,7 +311,7 @@ public class Scheduler implements Runnable {
                     if (!skipShardSyncAtWorkerInitializationIfLeasesExist || leaseRefresher.isLeaseTableEmpty()) {
                         // TODO: Resume the shard sync from failed stream in the next attempt, to avoid syncing
                         // TODO: for already synced streams
-                        for(Map.Entry<StreamIdentifier, StreamConfig> streamConfigEntry : currentStreamConfigMap.entrySet()) {
+                        for (Map.Entry<StreamIdentifier, StreamConfig> streamConfigEntry : currentStreamConfigMap.entrySet()) {
                             final StreamIdentifier streamIdentifier = streamConfigEntry.getKey();
                             log.info("Syncing Kinesis shard info for " + streamIdentifier);
                             final StreamConfig streamConfig = streamConfigEntry.getValue();
@@ -517,7 +516,6 @@ public class Scheduler implements Runnable {
      * Requests a graceful shutdown of the worker, notifying record processors, that implement
      * {@link ShutdownNotificationAware}, of the impending shutdown. This gives the record processor a final chance to
      * checkpoint.
-     *
      * This will only create a single shutdown future. Additional attempts to start a graceful shutdown will return the
      * previous future.
      *
@@ -544,8 +542,8 @@ public class Scheduler implements Runnable {
      * </ol>
      *
      * @return a future that will be set once the shutdown has completed. True indicates that the graceful shutdown
-     *         completed successfully. A false value indicates that a non-exception case caused the shutdown process to
-     *         terminate early.
+     * completed successfully. A false value indicates that a non-exception case caused the shutdown process to
+     * terminate early.
      */
     public Future<Boolean> startGracefulShutdown() {
         synchronized (this) {
@@ -562,9 +560,8 @@ public class Scheduler implements Runnable {
      * shutdowns in your own executor, or execute the shutdown synchronously.
      *
      * @return a callable that run the graceful shutdown process. This may return a callable that return true if the
-     *         graceful shutdown has already been completed.
-     * @throws IllegalStateException
-     *             thrown by the callable if another callable has already started the shutdown process.
+     * graceful shutdown has already been completed.
+     * @throws IllegalStateException thrown by the callable if another callable has already started the shutdown process.
      */
     public Callable<Boolean> createGracefulShutdownCallable() {
         if (shutdownComplete()) {
@@ -705,12 +702,11 @@ public class Scheduler implements Runnable {
     /**
      * NOTE: This method is internal/private to the Worker class. It has package access solely for testing.
      *
-     * @param shardInfo
-     *            Kinesis shard info
+     * @param shardInfo Kinesis shard info
      * @return ShardConsumer for the shard
      */
     ShardConsumer createOrGetShardConsumer(@NonNull final ShardInfo shardInfo,
-            @NonNull final ShardRecordProcessorFactory shardRecordProcessorFactory) {
+                                           @NonNull final ShardRecordProcessorFactory shardRecordProcessorFactory) {
         ShardConsumer consumer = shardInfoShardConsumerMap.get(shardInfo);
         // Instantiate a new consumer if we don't have one, or the one we
         // had was from an earlier
@@ -731,10 +727,10 @@ public class Scheduler implements Runnable {
     }
 
     protected ShardConsumer buildConsumer(@NonNull final ShardInfo shardInfo,
-            @NonNull final ShardRecordProcessorFactory shardRecordProcessorFactory) {
+                                          @NonNull final ShardRecordProcessorFactory shardRecordProcessorFactory) {
         RecordsPublisher cache = retrievalConfig.retrievalFactory().createGetRecordsCache(shardInfo, metricsFactory);
         ShardRecordProcessorCheckpointer checkpointer = coordinatorConfig.coordinatorFactory().createRecordProcessorCheckpointer(shardInfo,
-                        checkpoint);
+                checkpoint);
         // The only case where streamName is not available will be when multistreamtracker not set. In this case,
         // get the default stream name for the single stream application.
         final StreamIdentifier streamIdentifier = getStreamIdentifier(shardInfo.streamIdentifierSerOpt());
@@ -766,12 +762,11 @@ public class Scheduler implements Runnable {
                 hierarchicalShardSyncer,
                 metricsFactory);
         return new ShardConsumer(cache, executorService, shardInfo, lifecycleConfig.logWarningForTaskAfterMillis(),
-                argument, lifecycleConfig.taskExecutionListener(),lifecycleConfig.readTimeoutsToIgnoreBeforeWarning());
+                argument, lifecycleConfig.taskExecutionListener(), lifecycleConfig.readTimeoutsToIgnoreBeforeWarning());
     }
 
     /**
      * NOTE: This method is internal/private to the Worker class. It has package access solely for testing.
-     *
      * This method relies on ShardInfo.equals() method returning true for ShardInfo objects which may have been
      * instantiated with parentShardIds in a different order (and rest of the fields being the equal). For example
      * shardInfo1.equals(shardInfo2) should return true with shardInfo1 and shardInfo2 defined as follows. ShardInfo
@@ -816,7 +811,7 @@ public class Scheduler implements Runnable {
 
     private StreamIdentifier getStreamIdentifier(Optional<String> streamIdentifierString) {
         final StreamIdentifier streamIdentifier;
-        if(streamIdentifierString.isPresent()) {
+        if (streamIdentifierString.isPresent()) {
             streamIdentifier = StreamIdentifier.multiStreamInstance(streamIdentifierString.get());
         } else {
             Validate.isTrue(!isMultiStreamMode, "Should not be in MultiStream Mode");

@@ -15,14 +15,31 @@
 
 package software.amazon.kinesis.retrieval;
 
-import java.util.function.Function;
-import software.amazon.kinesis.retrieval.polling.DataFetcher;
+import java.time.Duration;
+import lombok.Data;
+import lombok.NonNull;
+import software.amazon.kinesis.common.StreamIdentifier;
+import software.amazon.kinesis.metrics.MetricsFactory;
 
-public interface RetrievalSpecificConfig {
-    /**
-     * Creates and returns a retrieval factory for the specific configuration
-     *
-     * @return a retrieval factory that can create an appropriate retriever
-     */
-    RetrievalFactory retrievalFactory();
+
+/**
+ * Configuration needed for custom data fetchers
+ */
+@Data
+public class KinesisDataFetcherProviderConfig implements DataFetcherProviderConfig {
+
+    @NonNull
+    private StreamIdentifier streamIdentifier;
+
+    @NonNull
+    private String shardId;
+
+    @NonNull
+    private MetricsFactory metricsFactory;
+
+    @NonNull
+    private Integer maxRecords;
+
+    @NonNull
+    private Duration kinesisRequestTimeout;
 }

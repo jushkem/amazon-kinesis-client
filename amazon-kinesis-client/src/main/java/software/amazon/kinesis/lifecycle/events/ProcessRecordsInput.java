@@ -56,6 +56,7 @@ public class ProcessRecordsInput {
      * The records received from Kinesis. These records may have been de-aggregated if they were published by the KPL.
      */
     private List<KinesisClientRecord> records;
+
     /**
      * A checkpointer that the {@link ShardRecordProcessor} can use to checkpoint its progress.
      */

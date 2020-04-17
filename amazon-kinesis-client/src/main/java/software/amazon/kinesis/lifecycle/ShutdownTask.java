@@ -16,7 +16,8 @@ package software.amazon.kinesis.lifecycle;
 
 import com.google.common.annotations.VisibleForTesting;
 
-import com.sun.org.apache.bcel.internal.generic.LUSHR;
+import java.util.List;
+import java.util.function.Function;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,26 +27,20 @@ import software.amazon.awssdk.utils.CollectionUtils;
 import software.amazon.kinesis.annotations.KinesisClientInternalApi;
 import software.amazon.kinesis.checkpoint.ShardRecordProcessorCheckpointer;
 import software.amazon.kinesis.common.InitialPositionInStreamExtended;
+import software.amazon.kinesis.leases.HierarchicalShardSyncer;
 import software.amazon.kinesis.leases.Lease;
 import software.amazon.kinesis.leases.LeaseCoordinator;
-import software.amazon.kinesis.leases.LeaseRefresher;
 import software.amazon.kinesis.leases.ShardDetector;
 import software.amazon.kinesis.leases.ShardInfo;
-import software.amazon.kinesis.leases.HierarchicalShardSyncer;
 import software.amazon.kinesis.lifecycle.events.LeaseLostInput;
 import software.amazon.kinesis.lifecycle.events.ShardEndedInput;
 import software.amazon.kinesis.metrics.MetricsFactory;
-import software.amazon.kinesis.metrics.MetricsScope;
 import software.amazon.kinesis.metrics.MetricsLevel;
+import software.amazon.kinesis.metrics.MetricsScope;
 import software.amazon.kinesis.metrics.MetricsUtil;
 import software.amazon.kinesis.processor.ShardRecordProcessor;
 import software.amazon.kinesis.retrieval.RecordsPublisher;
 import software.amazon.kinesis.retrieval.kpl.ExtendedSequenceNumber;
-
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.function.Function;
 
 /**
  * Task for invoking the ShardRecordProcessor shutdown() callback.
