@@ -14,6 +14,7 @@
  */
 package com.amazonaws.services.kinesis.clientlibrary.lib.worker;
 
+import java.time.Duration;
 import java.util.Date;
 import java.util.Optional;
 import java.util.Set;
@@ -88,6 +89,23 @@ public class KinesisClientLibConfiguration {
      * to delete the ones we don't need any longer.
      */
     public static final boolean DEFAULT_CLEANUP_LEASES_UPON_SHARDS_COMPLETION = true;
+
+    /**
+     * Interval to run lease cleanup thread in {@link LeaseCleanupManager}.
+     */
+    private static final long DEFAULT_LEASE_CLEANUP_INTERVAL_MILLIS = Duration.ofHours(1).toMillis();
+
+    /**
+     * Threshold for how long a lease pending deletion can wait before checking if the lease can be deleted as a
+     * completed shard.
+     */
+    private static final long DEFAULT_COMPLETED_LEASE_CLEANUP_THRESHOLD_MILLIS = Duration.ofMinutes(5).toMillis();
+
+    /**
+     * Threshold for how long a lease pending deletion can wait before checking if the lease can be deleted as a
+     * garbage shard.
+     */
+    private static final long DEFAULT_GARBAGE_LEASE_CLEANUP_THRESHOLD_MILLIS = Duration.ofMinutes(30).toMillis();
 
     /**
      * Backoff time in milliseconds for Amazon Kinesis Client Library tasks (in the event of failures).
@@ -246,6 +264,9 @@ public class KinesisClientLibConfiguration {
     private ShardPrioritization shardPrioritization;
     private long shutdownGraceMillis;
     private ShardSyncStrategyType shardSyncStrategyType;
+    private long leaseCleanupIntervalMillis;
+    private long completedLeaseCleanupThresholdMillis;
+    private long garbageLeaseCleanupThresholdMillis;
 
     @Getter
     private Optional<Integer> timeoutInSeconds = Optional.empty();
@@ -333,7 +354,10 @@ public class KinesisClientLibConfiguration {
                 DEFAULT_METRICS_MAX_QUEUE_SIZE,
                 DEFAULT_VALIDATE_SEQUENCE_NUMBER_BEFORE_CHECKPOINTING,
                 null,
-                DEFAULT_SHUTDOWN_GRACE_MILLIS, DEFAULT_DDB_BILLING_MODE);
+                DEFAULT_SHUTDOWN_GRACE_MILLIS, DEFAULT_DDB_BILLING_MODE,
+                DEFAULT_LEASE_CLEANUP_INTERVAL_MILLIS,
+                DEFAULT_COMPLETED_LEASE_CLEANUP_THRESHOLD_MILLIS,
+                DEFAULT_GARBAGE_LEASE_CLEANUP_THRESHOLD_MILLIS);
     }
 
     /**
@@ -404,7 +428,9 @@ public class KinesisClientLibConfiguration {
                 shardSyncIntervalMillis, cleanupTerminatedShardsBeforeExpiry,
                 kinesisClientConfig, dynamoDBClientConfig, cloudWatchClientConfig,
                 taskBackoffTimeMillis, metricsBufferTimeMillis, metricsMaxQueueSize,
-                validateSequenceNumberBeforeCheckpointing, regionName, shutdownGraceMillis, billingMode);
+                validateSequenceNumberBeforeCheckpointing, regionName, shutdownGraceMillis, billingMode,
+                DEFAULT_LEASE_CLEANUP_INTERVAL_MILLIS, DEFAULT_COMPLETED_LEASE_CLEANUP_THRESHOLD_MILLIS,
+                DEFAULT_GARBAGE_LEASE_CLEANUP_THRESHOLD_MILLIS);
     }
 
     /**
@@ -469,7 +495,10 @@ public class KinesisClientLibConfiguration {
                                          boolean validateSequenceNumberBeforeCheckpointing,
                                          String regionName,
                                          long shutdownGraceMillis,
-                                         BillingMode billingMode) {
+                                         BillingMode billingMode,
+                                         long leaseCleanupIntervalMillis,
+                                         long completedLeaseCleanupThresholdMillis,
+                                         long garbageLeaseCleanupThresholdMillis) {
         // Check following values are greater than zero
         checkIsValuePositive("FailoverTimeMillis", failoverTimeMillis);
         checkIsValuePositive("IdleTimeBetweenReadsInMillis", idleTimeBetweenReadsInMillis);
@@ -518,6 +547,9 @@ public class KinesisClientLibConfiguration {
         this.shardPrioritization = DEFAULT_SHARD_PRIORITIZATION;
         this.recordsFetcherFactory = new SimpleRecordsFetcherFactory();
         this.billingMode = billingMode;
+        this.leaseCleanupIntervalMillis = leaseCleanupIntervalMillis;
+        this.completedLeaseCleanupThresholdMillis = completedLeaseCleanupThresholdMillis;
+        this.garbageLeaseCleanupThresholdMillis = garbageLeaseCleanupThresholdMillis;
     }
 
     /**
@@ -834,6 +866,29 @@ public class KinesisClientLibConfiguration {
      */
     public boolean shouldCleanupLeasesUponShardCompletion() {
         return cleanupLeasesUponShardCompletion;
+    }
+
+    /**
+     * @return Rate at which to run lease cleanup thread in {@link com.amazonaws.services.kinesis.leases.impl.LeaseCleanupManager}
+     */
+    public long leaseCleanupIntervalMillis() {
+        return leaseCleanupIntervalMillis;
+    }
+
+    /**
+     * @return Threshold for how long a lease can be pending deletion before checking if the lease can be deleted as
+     * a completed shard.
+     */
+    public long completedLeaseCleanupThresholdMillis() {
+        return completedLeaseCleanupThresholdMillis;
+    }
+
+    /**
+     * @return Threshold for how long a lease can be pending deletion before checking if the lease can be deleted as
+     * a garbage shard.
+     */
+    public long garbageLeaseCleanupThresholdMillis() {
+        return garbageLeaseCleanupThresholdMillis;
     }
 
     /**
@@ -1474,6 +1529,39 @@ public class KinesisClientLibConfiguration {
     public KinesisClientLibConfiguration withMaxInitializationAttempts(int maxInitializationAttempts) {
         checkIsValuePositive("maxInitializationAttempts", maxInitializationAttempts);
         this.maxInitializationAttempts = maxInitializationAttempts;
+        return this;
+    }
+
+    /**
+     * @param leaseCleanupIntervalMillis Rate at which to run lease cleanup thread in
+     * {@link com.amazonaws.services.kinesis.leases.impl.LeaseCleanupManager}
+     * @return
+     */
+    public KinesisClientLibConfiguration withLeaseCleanupIntervalMillis(long leaseCleanupIntervalMillis) {
+        checkIsValuePositive("leaseCleanupIntervalMillis", leaseCleanupIntervalMillis);
+        this.leaseCleanupIntervalMillis = leaseCleanupIntervalMillis;
+        return this;
+    }
+
+    /**
+     * Threshold for how long a lease can be pending deletion before checking if the lease can be deleted as a completed shard.
+     * @param completedLeaseCleanupThresholdMillis
+     * @return
+     */
+    public KinesisClientLibConfiguration withCompletedLeaseCleanupThresholdMillis(long completedLeaseCleanupThresholdMillis) {
+        checkIsValuePositive("completedLeaseCleanupThresholdMillis", completedLeaseCleanupThresholdMillis);
+        this.completedLeaseCleanupThresholdMillis = completedLeaseCleanupThresholdMillis;
+        return this;
+    }
+
+    /**
+     * Threshold for how long a lease can be pending deletion before checking if the lease can be deleted as a garbage shard.
+     * @param garbageLeaseCleanupThresholdMillis
+     * @return
+     */
+    public KinesisClientLibConfiguration withGarbageLeaseCleanupThresholdMillis(long  garbageLeaseCleanupThresholdMillis) {
+        checkIsValuePositive("garbageLeaseCleanupThresholdMillis",  garbageLeaseCleanupThresholdMillis);
+        this.garbageLeaseCleanupThresholdMillis =  garbageLeaseCleanupThresholdMillis;
         return this;
     }
 }

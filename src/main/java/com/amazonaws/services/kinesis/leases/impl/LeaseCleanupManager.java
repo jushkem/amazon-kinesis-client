@@ -15,18 +15,16 @@ package com.amazonaws.services.kinesis.leases.impl;
  * limitations under the License.
  */
 
-import com.amazonaws.services.kinesis.AmazonKinesis;
 import com.amazonaws.services.kinesis.clientlibrary.lib.worker.ShardInfo;
+import com.amazonaws.services.kinesis.clientlibrary.proxies.IKinesisProxy;
 import com.amazonaws.services.kinesis.clientlibrary.types.ExtendedSequenceNumber;
 import com.amazonaws.services.kinesis.leases.LeasePendingDeletion;
 import com.amazonaws.services.kinesis.leases.exceptions.DependencyException;
 import com.amazonaws.services.kinesis.leases.exceptions.InvalidStateException;
 import com.amazonaws.services.kinesis.leases.exceptions.ProvisionedThroughputException;
+import com.amazonaws.services.kinesis.leases.interfaces.ILeaseManager;
 import com.amazonaws.services.kinesis.metrics.interfaces.IMetricsFactory;
-import com.amazonaws.services.kinesis.model.GetRecordsRequest;
 import com.amazonaws.services.kinesis.model.GetRecordsResult;
-import com.amazonaws.services.kinesis.model.GetShardIteratorRequest;
-import com.amazonaws.services.kinesis.model.GetShardIteratorResult;
 import com.amazonaws.services.kinesis.model.ResourceNotFoundException;
 import com.amazonaws.services.kinesis.model.ShardIteratorType;
 import com.amazonaws.util.CollectionUtils;
@@ -39,14 +37,11 @@ import org.apache.commons.logging.LogFactory;
 
 import java.util.HashSet;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Queue;
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
 /**
@@ -58,15 +53,13 @@ import java.util.stream.Collectors;
 @EqualsAndHashCode
 public class LeaseCleanupManager {
     @NonNull
-    private final String streamName;
+    private IKinesisProxy kinesisProxy;
     @NonNull
-    private final LeaseManager<KinesisClientLease> leaseManager;
-    @NonNull
-    private AmazonKinesis kinesis;
-    @NonNull
-    private final IMetricsFactory metricsFactory;
+    private final ILeaseManager<KinesisClientLease> leaseManager;
     @NonNull
     private final ScheduledExecutorService deletionThreadPool;
+    @NonNull
+    private final IMetricsFactory metricsFactory;
     private final boolean cleanupLeasesUponShardCompletion;
     private final long leaseCleanupIntervalMillis;
     private final long completedLeaseCleanupThresholdMillis;
@@ -115,7 +108,7 @@ public class LeaseCleanupManager {
      * Returns how many leases are currently waiting in the queue pending deletion.
      * @return number of leases pending deletion.
      */
-    public int deletionQueue() {
+    public int leasesPendingDeletion() {
         return deletionQueue.size();
     }
 
@@ -128,24 +121,24 @@ public class LeaseCleanupManager {
 
         if (leasePendingDeletion.pendingForLongerThan(completedLeaseCleanupThresholdMillis)) {
             if (cleanupLeasesUponShardCompletion) {
-                Set<String> childShardKeys = leaseManager.getLease(lease.getLeaseKey()).getChildShards();
-                if (CollectionUtils.isNullOrEmpty(childShardKeys)) {
+                Set<String> childShardIds = leaseManager.getLease(lease.getLeaseKey()).getChildShardIds();
+                if (CollectionUtils.isNullOrEmpty(childShardIds)) {
                     try {
-                        childShardKeys = getChildShards(shardInfo, streamName);
-                        updateLeaseWithChildShards(leasePendingDeletion, childShardKeys);
+                        childShardIds = getChildShards(shardInfo);
+                        updateLeaseWithChildShards(leasePendingDeletion, childShardIds);
                     } catch (ResourceNotFoundException e) {
                         return cleanupLeaseForGarbageShard(lease);
                     } finally {
                         alreadyCheckedForGarbageCollection = true;
                     }
                 }
-                cleanedUpLease = cleanupLeaseForCompletedShard(lease, shardInfo, childShardKeys);
+                cleanedUpLease = cleanupLeaseForCompletedShard(lease, shardInfo, childShardIds);
             }
         }
 
         if (!alreadyCheckedForGarbageCollection && leasePendingDeletion.pendingForLongerThan(garbageLeaseCleanupThresholdMillis)) {
             try {
-                getChildShards(shardInfo, streamName);
+                getChildShards(shardInfo);
             } catch (ResourceNotFoundException e) {
                 cleanedUpLease = cleanupLeaseForGarbageShard(lease);
             }
@@ -154,19 +147,9 @@ public class LeaseCleanupManager {
         return cleanedUpLease;
     }
 
-    private Set<String> getChildShards(ShardInfo shardInfo, String streamName) {
-        final GetShardIteratorRequest getShardIteratorRequest = new GetShardIteratorRequest();
-        getShardIteratorRequest.setStreamName(streamName);
-        getShardIteratorRequest.setShardIteratorType(ShardIteratorType.LATEST);
-        getShardIteratorRequest.setShardId(shardInfo.getShardId())
-
-        final GetShardIteratorResult getShardIteratorResult = kinesis.getShardIterator(getShardIteratorRequest);
-
-        final GetRecordsRequest getRecordsRequest = new GetRecordsRequest();
-        getRecordsRequest.setShardIterator(getShardIteratorResult.getShardIterator());
-        getRecordsRequest.setLimit(MAX_RECORDS);
-
-        final GetRecordsResult getRecordsResult = kinesis.getRecords(getRecordsRequest);
+    private Set<String> getChildShards(ShardInfo shardInfo) {
+        final String shardIterator = kinesisProxy.getIterator(shardInfo.getShardId(), ShardIteratorType.LATEST.toString(), null);
+        final GetRecordsResult getRecordsResult = kinesisProxy.get(shardIterator, MAX_RECORDS);
 
         return getRecordsResult.getChildShards().stream().map(c -> c.getShardId()).collect(Collectors.toSet());
     }
@@ -216,7 +199,7 @@ public class LeaseCleanupManager {
             }
         }
 
-        if (!allParentShardLeasesDeleted(lease, shardInfo) || !Objects.equals(childShardKeys, processedChildShardLeases)) {
+        if (!allParentShardLeasesDeleted(lease) || !Objects.equals(childShardKeys, processedChildShardLeases)) {
             return false;
         }
 
@@ -231,7 +214,7 @@ public class LeaseCleanupManager {
             throws DependencyException, ProvisionedThroughputException, InvalidStateException {
         final ShardInfo shardInfo = leasePendingDeletion.shardInfo();
         final KinesisClientLease updatedLease = leasePendingDeletion.lease().copy();
-        updatedLease.childShardIds(childShardKeys);
+        updatedLease.setChildShardIds(childShardKeys);
 
         final boolean updated = leaseManager.updateLease(updatedLease);
         if (!updated) {
@@ -252,15 +235,15 @@ public class LeaseCleanupManager {
                 boolean deletionFailed = true;
                 try {
                     if (cleanupLease(garbageLease)) {
-                        LOG.debug("Successfully cleaned up lease " + leaseKey + " for " + streamName);
+                        LOG.debug("Successfully cleaned up lease " + leaseKey + ".");
                         deletionFailed = false;
                     }
                 } catch (Exception e) {
-                    LOG.error("Failed to cleanup lease " + leaseKey + " for " + streamName + ".");
+                    LOG.error("Failed to cleanup lease " + leaseKey + ".");
                 }
 
                 if (deletionFailed) {
-                    LOG.debug("Did not cleanup lease " + leaseKey + " for " + streamName + ". Re-enqueueing for deletion.");
+                    LOG.debug("Did not cleanup lease " + leaseKey + ". Re-enqueueing for deletion.");
                     failedDeletions.add(garbageLease);
                 }
             }

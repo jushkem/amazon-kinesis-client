@@ -87,7 +87,10 @@ public class KinesisClientLibConfigurationTest {
                         TEST_VALUE_INT,
                         skipCheckpointValidationValue,
                         null,
-                        TEST_VALUE_LONG, BillingMode.PROVISIONED);
+                        TEST_VALUE_LONG, BillingMode.PROVISIONED,
+                        TEST_VALUE_LONG,
+                        TEST_VALUE_LONG,
+                        TEST_VALUE_LONG);
     }
 
     @Test
@@ -127,7 +130,10 @@ public class KinesisClientLibConfigurationTest {
                                 TEST_VALUE_INT,
                                 skipCheckpointValidationValue,
                                 null,
-                                longValues[6], BillingMode.PROVISIONED);
+                                longValues[6], BillingMode.PROVISIONED,
+                                TEST_VALUE_LONG,
+                                TEST_VALUE_LONG,
+                                TEST_VALUE_LONG);
             } catch (IllegalArgumentException e) {
                 System.out.println(e.getMessage());
             }
@@ -162,7 +168,10 @@ public class KinesisClientLibConfigurationTest {
                                 intValues[1],
                                 skipCheckpointValidationValue,
                                 null,
-                                TEST_VALUE_LONG, BillingMode.PAY_PER_REQUEST);
+                                TEST_VALUE_LONG, BillingMode.PAY_PER_REQUEST,
+                                TEST_VALUE_LONG,
+                                TEST_VALUE_LONG,
+                                TEST_VALUE_LONG);
             } catch (IllegalArgumentException e) {
                 System.out.println(e.getMessage());
             }

@@ -39,6 +39,7 @@ import com.amazonaws.services.kinesis.leases.exceptions.DependencyException;
 import com.amazonaws.services.kinesis.leases.exceptions.InvalidStateException;
 import com.amazonaws.services.kinesis.leases.exceptions.ProvisionedThroughputException;
 import com.amazonaws.services.kinesis.leases.impl.GenericLeaseSelector;
+import com.amazonaws.services.kinesis.leases.impl.LeaseCleanupManager;
 import com.amazonaws.services.kinesis.leases.impl.LeaseCoordinator;
 import com.amazonaws.services.kinesis.leases.impl.LeaseRenewer;
 import com.amazonaws.services.kinesis.leases.impl.LeaseTaker;
@@ -156,6 +157,8 @@ public class Worker implements Runnable {
     private LeaderDecider leaderDecider;
     private ShardSyncStrategy shardSyncStrategy;
     private PeriodicShardSyncManager leaderElectedPeriodicShardSyncManager;
+
+    private final LeaseCleanupManager leaseCleanupManager;
 
     /**
      * Constructor.
@@ -573,6 +576,10 @@ public class Worker implements Runnable {
         this.workerStateChangeListener = workerStateChangeListener;
         workerStateChangeListener.onWorkerStateChange(WorkerStateChangeListener.WorkerState.CREATED);
         createShardSyncStrategy(config.getShardSyncStrategyType(), leaderDecider, periodicShardSyncManager);
+        this.leaseCleanupManager = new LeaseCleanupManager(streamConfig.getStreamProxy(), leaseCoordinator.getLeaseManager(),
+                Executors.newSingleThreadScheduledExecutor(), metricsFactory, cleanupLeasesUponShardCompletion,
+                config.leaseCleanupIntervalMillis(), config.completedLeaseCleanupThresholdMillis(),
+                config.garbageLeaseCleanupThresholdMillis());
     }
 
     /**

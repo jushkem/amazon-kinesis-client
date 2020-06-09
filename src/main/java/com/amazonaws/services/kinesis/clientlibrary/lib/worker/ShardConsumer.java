@@ -21,6 +21,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 
+import com.amazonaws.services.kinesis.leases.impl.LeaseCleanupManager;
 import com.amazonaws.services.kinesis.model.ChildShard;
 import com.amazonaws.util.CollectionUtils;
 import org.apache.commons.logging.Log;
@@ -55,6 +56,7 @@ class ShardConsumer {
     private final IMetricsFactory metricsFactory;
     private final KinesisClientLibLeaseCoordinator leaseCoordinator;
     private ICheckpoint checkpoint;
+    private LeaseCleanupManager leaseCleanupManager;
     // Backoff time when polling to check if application has finished processing parent shards
     private final long parentShardPollIntervalMillis;
     private final boolean cleanupLeasesOfCompletedShards;
@@ -123,7 +125,8 @@ class ShardConsumer {
             IMetricsFactory metricsFactory,
             long backoffTimeMillis,
             boolean skipShardSyncAtWorkerInitializationIfLeasesExist,
-            KinesisClientLibConfiguration config, ShardSyncer shardSyncer, ShardSyncStrategy shardSyncStrategy) {
+            KinesisClientLibConfiguration config, ShardSyncer shardSyncer, ShardSyncStrategy shardSyncStrategy,
+            LeaseCleanupManager leaseCleanupManager) {
         this(shardInfo,
                 streamConfig,
                 checkpoint,
@@ -137,7 +140,8 @@ class ShardConsumer {
                 skipShardSyncAtWorkerInitializationIfLeasesExist,
                 Optional.empty(),
                 Optional.empty(),
-                config, shardSyncer, shardSyncStrategy);
+                config, shardSyncer, shardSyncStrategy,
+                leaseCleanupManager);
     }
 
     /**
@@ -169,7 +173,8 @@ class ShardConsumer {
             boolean skipShardSyncAtWorkerInitializationIfLeasesExist,
             Optional<Integer> retryGetRecordsInSeconds,
             Optional<Integer> maxGetRecordsThreadPool,
-            KinesisClientLibConfiguration config, ShardSyncer shardSyncer, ShardSyncStrategy shardSyncStrategy) {
+            KinesisClientLibConfiguration config, ShardSyncer shardSyncer, ShardSyncStrategy shardSyncStrategy,
+            LeaseCleanupManager leaseCleanupManager) {
         this(
                 shardInfo,
                 streamConfig,
@@ -193,7 +198,7 @@ class ShardConsumer {
                 new KinesisDataFetcher(streamConfig.getStreamProxy(), shardInfo),
                 retryGetRecordsInSeconds,
                 maxGetRecordsThreadPool,
-                config, shardSyncer, shardSyncStrategy
+                config, shardSyncer, shardSyncStrategy, leaseCleanupManager
         );
     }
 
@@ -231,7 +236,8 @@ class ShardConsumer {
             KinesisDataFetcher kinesisDataFetcher,
             Optional<Integer> retryGetRecordsInSeconds,
             Optional<Integer> maxGetRecordsThreadPool,
-            KinesisClientLibConfiguration config, ShardSyncer shardSyncer, ShardSyncStrategy shardSyncStrategy) {
+            KinesisClientLibConfiguration config, ShardSyncer shardSyncer, ShardSyncStrategy shardSyncStrategy,
+            LeaseCleanupManager leaseCleanupManager) {
         this.shardInfo = shardInfo;
         this.streamConfig = streamConfig;
         this.checkpoint = checkpoint;
@@ -251,6 +257,7 @@ class ShardConsumer {
                 this.getShardInfo().getShardId(), this.metricsFactory, this.config.getMaxRecords());
         this.shardSyncer = shardSyncer;
         this.shardSyncStrategy = shardSyncStrategy;
+        this.leaseCleanupManager = leaseCleanupManager;
     }
 
     /**
@@ -528,5 +535,9 @@ class ShardConsumer {
 
     ShardSyncStrategy getShardSyncStrategy() {
         return shardSyncStrategy;
+    }
+
+    LeaseCleanupManager getLeaseCleanupManager() {
+        return leaseCleanupManager;
     }
 }
