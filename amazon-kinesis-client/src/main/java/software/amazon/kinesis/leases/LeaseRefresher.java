@@ -220,7 +220,7 @@ public interface LeaseRefresher {
     /**
      * Check (synchronously) if there are any leases in the lease table for a given stream identifier.
      *
-     * @param streamIdentifier to check leases for.
+     * @param streamIdentifier for multi-stream mode. Can be null.
      * @return true if there are no leases in the lease table
      *
      * @throws DependencyException if DynamoDB scan fails in an unexpected way
