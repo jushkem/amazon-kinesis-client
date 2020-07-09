@@ -227,8 +227,10 @@ public interface LeaseRefresher {
      * @throws InvalidStateException if lease table does not exist
      * @throws ProvisionedThroughputException if DynamoDB scan fails due to lack of capacity
      */
-    boolean isLeaseTableEmptyForStreamIdentifier(StreamIdentifier streamIdentifier) throws DependencyException,
-            InvalidStateException, ProvisionedThroughputException;
+    default boolean isLeaseTableEmptyForStreamIdentifier(StreamIdentifier streamIdentifier) throws DependencyException,
+            InvalidStateException, ProvisionedThroughputException {
+        throw new UnsupportedOperationException("isLeaseTableEmptyForStreamIdentifier is not implemented");
+    }
 
     /**
      * Gets the current checkpoint of the shard. This is useful in the resharding use case
