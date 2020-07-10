@@ -42,7 +42,7 @@ public class KinesisClientLibConfiguration {
      * The location in the shard from which the KinesisClientLibrary will start fetching records from
      * when the application starts for the first time and there is no checkpoint for the shard.
      */
-    public static final InitialPositionInStream DEFAULT_INITIAL_POSITION_IN_STREAM = InitialPositionInStream.LATEST;
+    public static final InitialPositionInStream DEFAULT_INITIAL_POSITION_IN_STREAM = InitialPositionInStream.TRIM_HORIZON;
     /**
      * Default Billing mode for DDB when we need to create a new lease table. Default value is Provisioned which requires the customer to manage the IOPS on the lease table.
      */
@@ -93,19 +93,22 @@ public class KinesisClientLibConfiguration {
     /**
      * Interval to run lease cleanup thread in {@link LeaseCleanupManager}.
      */
-    private static final long DEFAULT_LEASE_CLEANUP_INTERVAL_MILLIS = Duration.ofHours(1).toMillis();
+//    private static final long DEFAULT_LEASE_CLEANUP_INTERVAL_MILLIS = Duration.ofHours(1).toMillis();
+    private static final long DEFAULT_LEASE_CLEANUP_INTERVAL_MILLIS = Duration.ofSeconds(10).toMillis();
 
     /**
      * Threshold for how long a lease pending deletion can wait before checking if the lease can be deleted as a
      * completed shard.
      */
-    private static final long DEFAULT_COMPLETED_LEASE_CLEANUP_THRESHOLD_MILLIS = Duration.ofMinutes(5).toMillis();
+//    private static final long DEFAULT_COMPLETED_LEASE_CLEANUP_THRESHOLD_MILLIS = Duration.ofMinutes(5).toMillis();
+    private static final long DEFAULT_COMPLETED_LEASE_CLEANUP_THRESHOLD_MILLIS = Duration.ofSeconds(5).toMillis();
 
     /**
      * Threshold for how long a lease pending deletion can wait before checking if the lease can be deleted as a
      * garbage shard.
      */
-    private static final long DEFAULT_GARBAGE_LEASE_CLEANUP_THRESHOLD_MILLIS = Duration.ofMinutes(30).toMillis();
+//    private static final long DEFAULT_GARBAGE_LEASE_CLEANUP_THRESHOLD_MILLIS = Duration.ofMinutes(30).toMillis();
+    private static final long DEFAULT_GARBAGE_LEASE_CLEANUP_THRESHOLD_MILLIS = Duration.ofSeconds(5).toMillis();
 
     /**
      * Backoff time in milliseconds for Amazon Kinesis Client Library tasks (in the event of failures).

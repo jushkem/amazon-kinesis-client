@@ -46,7 +46,6 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
 /**
@@ -87,6 +86,7 @@ public class LeaseCleanupManager {
      */
     public void start() {
         LOG.debug("Starting lease cleanup thread.");
+        isRunning = true;
         completedLeaseStopwatch.start();
         garbageLeaseStopwatch.start();
 

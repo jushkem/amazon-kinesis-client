@@ -210,7 +210,7 @@ public class PrefetchGetRecordsCacheIntegrationTest {
     private class KinesisDataFetcherForTest extends KinesisDataFetcher {
         public KinesisDataFetcherForTest(final IKinesisProxy kinesisProxy,
                                          final ShardInfo shardInfo) {
-            super(kinesisProxy, shardInfo, leaseCoordinator);
+            super(kinesisProxy, shardInfo);
         }
 
         @Override
