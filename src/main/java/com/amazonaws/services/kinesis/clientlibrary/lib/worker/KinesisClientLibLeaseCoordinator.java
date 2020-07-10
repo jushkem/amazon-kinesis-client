@@ -292,20 +292,6 @@ class KinesisClientLibLeaseCoordinator extends LeaseCoordinator<KinesisClientLea
         }
     }
 
-    public Set<String> getChildShardIds(String shardId) {
-        String errorMessage = "Unable to fetch childShardIds for shardId " + shardId;
-        try {
-            final KinesisClientLease lease = leaseManager.getLease(shardId);
-            if (lease == null) {
-                throw new KinesisClientLibIOException(errorMessage);
-            }
-            return lease.getChildShardIds();
-        } catch (DependencyException | InvalidStateException | ProvisionedThroughputException e) {
-            LOG.error(errorMessage, e);
-            throw new KinesisClientLibIOException(errorMessage, e);
-        }
-    }
-
     /**
      * @return Current shard/lease assignments
      */
