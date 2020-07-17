@@ -214,7 +214,7 @@ public class LeaseCleanupManagerTest {
         testLeaseDeletedWhenShardDoesNotExist(heldLease, Duration.ofHours(1).toMillis(), 1, 0);
     }
 
-    public void testLeaseDeletedWhenShardDoesNotExist(Lease heldLease, long timeSpentInQueue, int expectedDeletions,int expectedQueueSize)
+    public void testLeaseDeletedWhenShardDoesNotExist(Lease heldLease, long timeSpentInQueue, int expectedDeletions, int expectedQueueSize)
             throws Exception {
         final LeasePendingDeletion leasePendingDeletion = mock(LeasePendingDeletion.class);
 
