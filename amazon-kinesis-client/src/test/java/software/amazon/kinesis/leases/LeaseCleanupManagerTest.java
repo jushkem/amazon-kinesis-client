@@ -15,7 +15,6 @@
 
 package software.amazon.kinesis.leases;
 
-import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -43,7 +42,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.stream.Collectors;
 
+import static org.junit.Assert.assertEquals;
 import static org.mockito.Matchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -191,7 +192,7 @@ public class LeaseCleanupManagerTest {
                 ExtendedSequenceNumber.LATEST);
         final Lease heldLease = LeaseHelper.createLease(shardInfo.shardId(), "leaseOwner", Collections.singleton("parentShardId"));
 
-        testLeaseDeletedWhenShardDoesNotExist(heldLease);
+        testLeaseDeletedWhenShardDoesNotExist(heldLease, Duration.ofHours(0).toMillis(), 0,1);
     }
 
     /**
@@ -210,19 +211,27 @@ public class LeaseCleanupManagerTest {
                 deletionThreadPool, cleanupLeasesOfCompletedShards, leaseCleanupIntervalMillis, completedLeaseCleanupIntervalMillis,
                 garbageLeaseCleanupIntervalMillis);
 
-        testLeaseDeletedWhenShardDoesNotExist(heldLease);
+        testLeaseDeletedWhenShardDoesNotExist(heldLease, Duration.ofHours(1).toMillis(), 1, 0);
     }
 
-    public void testLeaseDeletedWhenShardDoesNotExist(Lease heldLease) throws Exception {
+    public void testLeaseDeletedWhenShardDoesNotExist(Lease heldLease, long timeSpentInQueue, int expectedDeletions,int expectedQueueSize)
+            throws Exception {
+        final LeasePendingDeletion leasePendingDeletion = mock(LeasePendingDeletion.class);
+
         when(leaseCoordinator.leaseRefresher()).thenReturn(leaseRefresher);
         when(leaseCoordinator.getCurrentlyHeldLease(shardInfo.shardId())).thenReturn(heldLease);
         when(kinesis.getShardIterator(any(GetShardIteratorRequest.class))).thenThrow(ResourceNotFoundException.class);
         when(leaseRefresher.getLease(heldLease.leaseKey())).thenReturn(heldLease);
+        when(leasePendingDeletion.streamIdentifier()).thenReturn(streamIdentifier);
+        when(leasePendingDeletion.shardInfo()).thenReturn(shardInfo);
+        when(leasePendingDeletion.lease()).thenReturn(heldLease);
+        when(leasePendingDeletion.timeSpentInQueueMillis()).thenReturn(timeSpentInQueue);
 
-        leaseCleanupManager.enqueueForDeletion(new LeasePendingDeletion(streamIdentifier, heldLease, shardInfo));
+        leaseCleanupManager.enqueueForDeletion(leasePendingDeletion);
         leaseCleanupManager.cleanupLeases();
 
-        verify(leaseRefresher, times(1)).deleteLease(heldLease);
+        verify(leaseRefresher, times(expectedDeletions)).deleteLease(heldLease);
+        assertEquals(leaseCleanupManager.leasesPendingDeletion(), expectedQueueSize);
     }
 
     private final void verifyExpectedDeletedLeasesCompletedShardCase(ShardInfo shardInfo, List<ChildShard> childShards,

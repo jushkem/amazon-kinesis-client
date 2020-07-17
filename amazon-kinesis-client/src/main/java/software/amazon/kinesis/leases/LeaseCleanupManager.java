@@ -44,7 +44,6 @@ import software.amazon.kinesis.retrieval.AWSExceptionManager;
 import software.amazon.kinesis.retrieval.kpl.ExtendedSequenceNumber;
 
 import java.time.Duration;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Optional;
@@ -87,6 +86,7 @@ public class LeaseCleanupManager {
 
     private static final int MAX_RECORDS = 1;
     private static final long INITIAL_DELAY = 0L;
+    private static final long MINIMUM_TIME_SPENT_IN_QUEUE_FOR_GARBAGE_LEASE_MILLIS = Duration.ofHours(1).toMillis();
 
     @Getter
     private volatile boolean isRunning = false;
@@ -136,7 +136,7 @@ public class LeaseCleanupManager {
      * Returns how many leases are currently waiting in the queue pending deletion.
      * @return number of leases pending deletion.
      */
-    private int leasesPendingDeletion() {
+    public int leasesPendingDeletion() {
         return deletionQueue.size();
     }
 
@@ -210,7 +210,7 @@ public class LeaseCleanupManager {
             }
         } catch (ResourceNotFoundException e) {
             wasResourceNotFound = true;
-            cleanedUpGarbageLease = cleanupLeaseForGarbageShard(lease, e);
+            cleanedUpGarbageLease = cleanupLeaseForGarbageShard(leasePendingDeletion, e);
         }
 
         return new LeaseCleanupResult(cleanedUpCompletedLease, cleanedUpGarbageLease, wereChildShardsPresent,
@@ -242,10 +242,19 @@ public class LeaseCleanupManager {
 
     // A lease that ended with SHARD_END from ResourceNotFoundException is safe to delete if it no longer exists in the
     // stream (known explicitly from ResourceNotFound being thrown when processing this shard),
-    private boolean cleanupLeaseForGarbageShard(Lease lease, Throwable e) throws DependencyException, ProvisionedThroughputException, InvalidStateException {
-        log.warn("Deleting lease {} as it is not present in the stream.", lease, e);
-        leaseCoordinator.leaseRefresher().deleteLease(lease);
-        return true;
+    private boolean cleanupLeaseForGarbageShard(LeasePendingDeletion leasePendingDeletion, Throwable e)
+            throws DependencyException, ProvisionedThroughputException, InvalidStateException {
+        final Lease lease = leasePendingDeletion.lease();
+
+        if (leasePendingDeletion.timeSpentInQueueMillis() >= MINIMUM_TIME_SPENT_IN_QUEUE_FOR_GARBAGE_LEASE_MILLIS) {
+            log.info("Deleting lease {} as it is not present in the stream.", lease, e);
+            leaseCoordinator.leaseRefresher().deleteLease(lease);
+            return true;
+        } else {
+            log.debug("Not deleting lease {} because it has only been pending deletion for {} millis.", lease,
+                    leasePendingDeletion.timeSpentInQueueMillis());
+            return false;
+        }
     }
 
     private boolean allParentShardLeasesDeleted(Lease lease, ShardInfo shardInfo) throws DependencyException, ProvisionedThroughputException, InvalidStateException {
