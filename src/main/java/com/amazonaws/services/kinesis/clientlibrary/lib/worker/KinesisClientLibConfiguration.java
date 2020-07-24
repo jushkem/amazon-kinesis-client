@@ -93,22 +93,19 @@ public class KinesisClientLibConfiguration {
     /**
      * Interval to run lease cleanup thread in {@link LeaseCleanupManager}.
      */
-//    private static final long DEFAULT_LEASE_CLEANUP_INTERVAL_MILLIS = Duration.ofHours(1).toMillis();
-    private static final long DEFAULT_LEASE_CLEANUP_INTERVAL_MILLIS = Duration.ofSeconds(1).toMillis();
+    private static final long DEFAULT_LEASE_CLEANUP_INTERVAL_MILLIS = Duration.ofHours(1).toMillis();
 
     /**
-     * Threshold for how long a lease pending deletion can wait before checking if the lease can be deleted as a
-     * completed shard.
+     * Threshold in millis at which to check if there are any completed leases (leases for shards which have been
+     * closed as a result of a resharding operation) that need to be cleaned up.
      */
-//    private static final long DEFAULT_COMPLETED_LEASE_CLEANUP_THRESHOLD_MILLIS = Duration.ofMinutes(5).toMillis();
-    private static final long DEFAULT_COMPLETED_LEASE_CLEANUP_THRESHOLD_MILLIS = Duration.ofSeconds(5).toMillis();
+    private static final long DEFAULT_COMPLETED_LEASE_CLEANUP_THRESHOLD_MILLIS = Duration.ofMinutes(5).toMillis();
 
     /**
-     * Threshold for how long a lease pending deletion can wait before checking if the lease can be deleted as a
-     * garbage shard.
+     * Threshold in millis at which to check if there are any garbage leases (leases for shards which no longer exist
+     * in the stream) that need to be cleaned up.
      */
-//    private static final long DEFAULT_GARBAGE_LEASE_CLEANUP_THRESHOLD_MILLIS = Duration.ofMinutes(30).toMillis();
-    private static final long DEFAULT_GARBAGE_LEASE_CLEANUP_THRESHOLD_MILLIS = Duration.ofSeconds(30).toMillis();
+    private static final long DEFAULT_GARBAGE_LEASE_CLEANUP_THRESHOLD_MILLIS = Duration.ofMinutes(30).toMillis();
 
     /**
      * Backoff time in milliseconds for Amazon Kinesis Client Library tasks (in the event of failures).
