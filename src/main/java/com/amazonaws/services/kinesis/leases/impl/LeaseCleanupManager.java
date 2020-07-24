@@ -29,6 +29,7 @@ import com.amazonaws.services.kinesis.model.ShardIteratorType;
 import com.amazonaws.util.CollectionUtils;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Stopwatch;
+import lombok.AccessLevel;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NonNull;
@@ -53,7 +54,7 @@ import java.util.stream.Collectors;
  * {@link KinesisClientLibConfiguration#leaseCleanupIntervalMillis()} upon worker shutdown, following a re-shard event or
  * a shard expiring from the service.
  */
-@RequiredArgsConstructor
+@RequiredArgsConstructor(access= AccessLevel.PACKAGE)
 @EqualsAndHashCode
 public class LeaseCleanupManager {
     @NonNull
@@ -68,17 +69,45 @@ public class LeaseCleanupManager {
     private final long leaseCleanupIntervalMillis;
     private final long completedLeaseCleanupIntervalMillis;
     private final long garbageLeaseCleanupIntervalMillis;
+    private final int maxRecords;
+
     private final Stopwatch completedLeaseStopwatch = Stopwatch.createUnstarted();
     private final Stopwatch garbageLeaseStopwatch = Stopwatch.createUnstarted();
-
     private final Queue<LeasePendingDeletion> deletionQueue = new ConcurrentLinkedQueue<>();
 
-    private static final int MAX_RECORDS = 1;
     private static final long INITIAL_DELAY = 0L;
     private static final Log LOG = LogFactory.getLog(LeaseCleanupManager.class);
 
     @Getter
     private volatile boolean isRunning = false;
+
+    private static LeaseCleanupManager instance;
+
+    /**
+     * Factory method to return a singleton instance of {@link LeaseCleanupManager}.
+     * @param kinesisProxy
+     * @param leaseManager
+     * @param deletionThreadPool
+     * @param metricsFactory
+     * @param cleanupLeasesUponShardCompletion
+     * @param leaseCleanupIntervalMillis
+     * @param completedLeaseCleanupIntervalMillis
+     * @param garbageLeaseCleanupIntervalMillis
+     * @param maxRecords
+     * @return
+     */
+    public static LeaseCleanupManager createOrGetInstance(IKinesisProxy kinesisProxy, ILeaseManager leaseManager,
+                                                          ScheduledExecutorService deletionThreadPool, IMetricsFactory metricsFactory,
+                                                          boolean cleanupLeasesUponShardCompletion, long leaseCleanupIntervalMillis,
+                                                          long completedLeaseCleanupIntervalMillis, long garbageLeaseCleanupIntervalMillis,
+                                                          int maxRecords) {
+        if (instance == null) {
+            instance = new LeaseCleanupManager(kinesisProxy, leaseManager, deletionThreadPool, metricsFactory, cleanupLeasesUponShardCompletion,
+                    leaseCleanupIntervalMillis, completedLeaseCleanupIntervalMillis, garbageLeaseCleanupIntervalMillis, maxRecords);
+        }
+
+        return instance;
+    }
 
     /**
      * Starts the lease cleanup thread, which is scheduled periodically as specified by
@@ -204,7 +233,7 @@ public class LeaseCleanupManager {
 
     private Set<String> getChildShardsFromService(ShardInfo shardInfo) {
         final String iterator = kinesisProxy.getIterator(shardInfo.getShardId(), ShardIteratorType.LATEST.toString());
-        return kinesisProxy.get(iterator, MAX_RECORDS).getChildShards().stream().map(c -> c.getShardId()).collect(Collectors.toSet());
+        return kinesisProxy.get(iterator, maxRecords).getChildShards().stream().map(c -> c.getShardId()).collect(Collectors.toSet());
     }
 
 

@@ -576,10 +576,10 @@ public class Worker implements Runnable {
         this.workerStateChangeListener = workerStateChangeListener;
         workerStateChangeListener.onWorkerStateChange(WorkerStateChangeListener.WorkerState.CREATED);
         createShardSyncStrategy(config.getShardSyncStrategyType(), leaderDecider, periodicShardSyncManager);
-        this.leaseCleanupManager = new LeaseCleanupManager(streamConfig.getStreamProxy(), leaseCoordinator.getLeaseManager(),
+        this.leaseCleanupManager = LeaseCleanupManager.createOrGetInstance(streamConfig.getStreamProxy(), leaseCoordinator.getLeaseManager(),
                 Executors.newSingleThreadScheduledExecutor(), metricsFactory, cleanupLeasesUponShardCompletion,
                 config.leaseCleanupIntervalMillis(), config.completedLeaseCleanupThresholdMillis(),
-                config.garbageLeaseCleanupThresholdMillis());
+                config.garbageLeaseCleanupThresholdMillis(), config.getMaxRecords());
     }
 
     /**
@@ -1125,12 +1125,21 @@ public class Worker implements Runnable {
     }
 
     protected ShardConsumer buildConsumer(ShardInfo shardInfo, IRecordProcessorFactory processorFactory) {
-        IRecordProcessor recordProcessor = processorFactory.createProcessor();
+        final IRecordProcessor recordProcessor = processorFactory.createProcessor();
+        final RecordProcessorCheckpointer recordProcessorCheckpointer = new RecordProcessorCheckpointer(
+                shardInfo,
+                checkpointTracker,
+                new SequenceNumberValidator(
+                        streamConfig.getStreamProxy(),
+                        shardInfo.getShardId(),
+                        streamConfig.shouldValidateSequenceNumberBeforeCheckpointing()),
+                metricsFactory);
 
         return new ShardConsumer(shardInfo,
                 streamConfig,
                 checkpointTracker,
                 recordProcessor,
+                recordProcessorCheckpointer,
                 leaseCoordinator,
                 parentShardPollIntervalMillis,
                 cleanupLeasesUponShardCompletion,
@@ -1138,6 +1147,7 @@ public class Worker implements Runnable {
                 metricsFactory,
                 taskBackoffTimeMillis,
                 skipShardSyncAtWorkerInitializationIfLeasesExist,
+                new KinesisDataFetcher(streamConfig.getStreamProxy(), shardInfo),
                 retryGetRecordsInSeconds,
                 maxGetRecordsThreadPool,
                 config, shardSyncer, shardSyncStrategy,

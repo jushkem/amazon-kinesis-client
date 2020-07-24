@@ -25,6 +25,7 @@ import com.amazonaws.services.kinesis.metrics.interfaces.IMetricsFactory;
 import com.amazonaws.services.kinesis.model.ChildShard;
 import com.amazonaws.services.kinesis.model.GetRecordsResult;
 import com.amazonaws.services.kinesis.model.ResourceNotFoundException;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -39,6 +40,8 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.stream.Collectors;
 
 import static org.mockito.Matchers.any;
+import static org.mockito.Matchers.anyInt;
+import static org.mockito.Matchers.anyString;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -48,6 +51,7 @@ public class LeaseCleanupManagerTest {
 
     private ShardInfo shardInfo;
     private String concurrencyToken = "1234";
+    private int maxRecords = 1;
 
     private String getShardId = "getShardId";
     private String splitParent = "splitParent";
@@ -75,7 +79,7 @@ public class LeaseCleanupManagerTest {
         shardInfo = new ShardInfo(getShardId, concurrencyToken, Collections.emptySet(),
                 ExtendedSequenceNumber.LATEST);
         leaseCleanupManager = new LeaseCleanupManager(kinesis, leaseManager, deletionThreadPool, NULL_METRICS_FACTORY,
-                cleanupLeasesOfCompletedShards, leaseCleanupIntervalMillis, completedLeaseCleanupIntervalMillis, garbageLeaseCleanupIntervalMillis);
+                cleanupLeasesOfCompletedShards, leaseCleanupIntervalMillis, completedLeaseCleanupIntervalMillis, garbageLeaseCleanupIntervalMillis, maxRecords);
     }
 
     /**
@@ -84,7 +88,7 @@ public class LeaseCleanupManagerTest {
      */
     @Test
     public final void testParentShardLeaseDeletedSplitCase() throws Exception {
-        shardInfo = new ShardInfo("getShardId-0", concurrencyToken, Collections.emptySet(),
+        shardInfo = new ShardInfo("ShardId-0", concurrencyToken, Collections.emptySet(),
                 ExtendedSequenceNumber.LATEST);
 
         verifyExpectedDeletedLeasesCompletedShardCase(shardInfo, childShardsForSplit(), ExtendedSequenceNumber.LATEST, 1);
@@ -96,7 +100,7 @@ public class LeaseCleanupManagerTest {
      */
     @Test
     public final void testParentShardLeaseDeletedMergeCase() throws Exception {
-        shardInfo = new ShardInfo("getShardId-0", concurrencyToken, Collections.emptySet(),
+        shardInfo = new ShardInfo("ShardId-0", concurrencyToken, Collections.emptySet(),
                 ExtendedSequenceNumber.LATEST);
 
         verifyExpectedDeletedLeasesCompletedShardCase(shardInfo, childShardsForMerge(), ExtendedSequenceNumber.LATEST, 1);
@@ -108,12 +112,12 @@ public class LeaseCleanupManagerTest {
      */
     @Test
     public final void testNoLeasesDeletedWhenNotEnabled() throws Exception {
-        shardInfo = new ShardInfo("getShardId-0", concurrencyToken, Collections.emptySet(),
+        shardInfo = new ShardInfo("ShardId-0", concurrencyToken, Collections.emptySet(),
                 ExtendedSequenceNumber.LATEST);
         cleanupLeasesOfCompletedShards = false;
 
         leaseCleanupManager = new LeaseCleanupManager(kinesis, leaseManager, deletionThreadPool, NULL_METRICS_FACTORY,
-                cleanupLeasesOfCompletedShards, leaseCleanupIntervalMillis, completedLeaseCleanupIntervalMillis, garbageLeaseCleanupIntervalMillis);
+                cleanupLeasesOfCompletedShards, leaseCleanupIntervalMillis, completedLeaseCleanupIntervalMillis, garbageLeaseCleanupIntervalMillis, maxRecords);
 
         verifyExpectedDeletedLeasesCompletedShardCase(shardInfo, childShardsForSplit(), ExtendedSequenceNumber.LATEST, 0);
     }
@@ -126,7 +130,7 @@ public class LeaseCleanupManagerTest {
     public final void testNoCleanupWhenSomeChildShardLeasesAreNotPresent() throws Exception {
         List<ChildShard> childShards = childShardsForSplit();
 
-        shardInfo = new ShardInfo("getShardId-0", concurrencyToken, Collections.emptySet(),
+        shardInfo = new ShardInfo("ShardId-0", concurrencyToken, Collections.emptySet(),
                 ExtendedSequenceNumber.LATEST);
 
         verifyExpectedDeletedLeasesCompletedShardCase(shardInfo, childShards, ExtendedSequenceNumber.LATEST, false, 0);
@@ -152,7 +156,7 @@ public class LeaseCleanupManagerTest {
 
     private  void testParentShardLeaseNotDeletedWhenChildIsAtPosition(ExtendedSequenceNumber extendedSequenceNumber)
             throws Exception {
-        shardInfo = new ShardInfo("getShardId-0", concurrencyToken, Collections.emptySet(),
+        shardInfo = new ShardInfo("ShardId-0", concurrencyToken, Collections.emptySet(),
                 ExtendedSequenceNumber.LATEST);
 
         verifyExpectedDeletedLeasesCompletedShardCase(shardInfo, childShardsForMerge(), extendedSequenceNumber, 0);
@@ -163,7 +167,7 @@ public class LeaseCleanupManagerTest {
      */
     @Test
     public final void testLeaseNotDeletedWhenParentsStillPresent() throws Exception {
-        shardInfo = new ShardInfo("getShardId-0", concurrencyToken, Collections.singleton("parent"),
+        shardInfo = new ShardInfo("ShardId-0", concurrencyToken, Collections.singleton("parent"),
                 ExtendedSequenceNumber.LATEST);
 
         verifyExpectedDeletedLeasesCompletedShardCase(shardInfo, childShardsForMerge(), ExtendedSequenceNumber.LATEST, 0);
@@ -174,7 +178,7 @@ public class LeaseCleanupManagerTest {
      */
     @Test
     public final void testLeaseDeletedWhenShardDoesNotExist() throws Exception {
-        shardInfo = new ShardInfo("getShardId-0", concurrencyToken, Collections.emptySet(),
+        shardInfo = new ShardInfo("ShardId-0", concurrencyToken, Collections.emptySet(),
                 ExtendedSequenceNumber.LATEST);
         final KinesisClientLease heldLease = LeaseHelper.createLease(shardInfo.getShardId(), "leaseOwner", Collections.singleton("parentShardId"));
 
@@ -187,21 +191,22 @@ public class LeaseCleanupManagerTest {
      */
     @Test
     public final void testLeaseDeletedWhenShardDoesNotExistAndCleanupCompletedLeaseDisabled() throws Exception {
-        shardInfo = new ShardInfo("getShardId-0", concurrencyToken, Collections.emptySet(),
+        shardInfo = new ShardInfo("ShardId-0", concurrencyToken, Collections.emptySet(),
                 ExtendedSequenceNumber.LATEST);
         final KinesisClientLease heldLease = LeaseHelper.createLease(shardInfo.getShardId(), "leaseOwner", Collections.singleton("parentShardId"));
 
         cleanupLeasesOfCompletedShards = false;
 
         leaseCleanupManager = new LeaseCleanupManager(kinesis, leaseManager, deletionThreadPool, NULL_METRICS_FACTORY,
-                cleanupLeasesOfCompletedShards, leaseCleanupIntervalMillis, completedLeaseCleanupIntervalMillis, garbageLeaseCleanupIntervalMillis);
+                cleanupLeasesOfCompletedShards, leaseCleanupIntervalMillis, completedLeaseCleanupIntervalMillis, garbageLeaseCleanupIntervalMillis, maxRecords);
 
         testLeaseDeletedWhenShardDoesNotExist(heldLease);
     }
 
     public void testLeaseDeletedWhenShardDoesNotExist(KinesisClientLease heldLease) throws Exception {
         when(leaseCoordinator.getCurrentlyHeldLease(shardInfo.getShardId())).thenReturn(heldLease);
-        when(kinesis.getIterator(any(String.class), any(String.class))).thenThrow(ResourceNotFoundException.class);
+        when(kinesis.get(anyString(), anyInt())).thenThrow(ResourceNotFoundException.class);
+        when(kinesis.getIterator(anyString(), anyString())).thenThrow(ResourceNotFoundException.class);
         when(leaseManager.getLease(heldLease.getLeaseKey())).thenReturn(heldLease);
 
         leaseCleanupManager.enqueueForDeletion(new LeasePendingDeletion(heldLease, shardInfo));
@@ -210,13 +215,13 @@ public class LeaseCleanupManagerTest {
         verify(leaseManager, times(1)).deleteLease(heldLease);
     }
 
-    private  void verifyExpectedDeletedLeasesCompletedShardCase(ShardInfo shardInfo, List<ChildShard> childShards,
+    private void verifyExpectedDeletedLeasesCompletedShardCase(ShardInfo shardInfo, List<ChildShard> childShards,
                                                                      ExtendedSequenceNumber extendedSequenceNumber,
                                                                      int expectedDeletedLeases) throws Exception {
         verifyExpectedDeletedLeasesCompletedShardCase(shardInfo, childShards, extendedSequenceNumber, true, expectedDeletedLeases);
     }
 
-    private  void verifyExpectedDeletedLeasesCompletedShardCase(ShardInfo shardInfo, List<ChildShard> childShards,
+    private void verifyExpectedDeletedLeasesCompletedShardCase(ShardInfo shardInfo, List<ChildShard> childShards,
                                                                      ExtendedSequenceNumber extendedSequenceNumber,
                                                                      boolean childShardLeasesPresent,
                                                                      int expectedDeletedLeases) throws Exception {

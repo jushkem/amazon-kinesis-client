@@ -179,6 +179,7 @@ class ShutdownTask implements ITask {
                             leaseCleanupManager.enqueueForDeletion(leasePendingDeletion);
                         }
 
+                        //TODO: Add shard end checkpointing here.
                     }
                 }
                 LOG.debug("Shutting down retrieval strategy.");

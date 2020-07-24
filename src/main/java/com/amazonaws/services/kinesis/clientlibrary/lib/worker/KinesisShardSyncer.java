@@ -629,9 +629,9 @@ class KinesisShardSyncer implements ShardSyncer {
      * @return
      */
     static KinesisClientLease newKCLLeaseForChildShard(ChildShard childShard) throws InvalidStateException {
-        KinesisClientLease newLease = new KinesisClientLease();
+        final KinesisClientLease newLease = new KinesisClientLease();
         newLease.setLeaseKey(childShard.getShardId());
-        List<String> parentShardIds = new ArrayList<>();
+        final List<String> parentShardIds = new ArrayList<>();
         if (!CollectionUtils.isNullOrEmpty(childShard.getParentShards())) {
             parentShardIds.addAll(childShard.getParentShards());
         } else {

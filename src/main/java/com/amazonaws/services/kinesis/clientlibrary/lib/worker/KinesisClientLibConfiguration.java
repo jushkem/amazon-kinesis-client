@@ -354,10 +354,7 @@ public class KinesisClientLibConfiguration {
                 DEFAULT_METRICS_MAX_QUEUE_SIZE,
                 DEFAULT_VALIDATE_SEQUENCE_NUMBER_BEFORE_CHECKPOINTING,
                 null,
-                DEFAULT_SHUTDOWN_GRACE_MILLIS, DEFAULT_DDB_BILLING_MODE,
-                DEFAULT_LEASE_CLEANUP_INTERVAL_MILLIS,
-                DEFAULT_COMPLETED_LEASE_CLEANUP_THRESHOLD_MILLIS,
-                DEFAULT_GARBAGE_LEASE_CLEANUP_THRESHOLD_MILLIS);
+                DEFAULT_SHUTDOWN_GRACE_MILLIS, DEFAULT_DDB_BILLING_MODE);
     }
 
     /**
@@ -428,9 +425,7 @@ public class KinesisClientLibConfiguration {
                 shardSyncIntervalMillis, cleanupTerminatedShardsBeforeExpiry,
                 kinesisClientConfig, dynamoDBClientConfig, cloudWatchClientConfig,
                 taskBackoffTimeMillis, metricsBufferTimeMillis, metricsMaxQueueSize,
-                validateSequenceNumberBeforeCheckpointing, regionName, shutdownGraceMillis, billingMode,
-                DEFAULT_LEASE_CLEANUP_INTERVAL_MILLIS, DEFAULT_COMPLETED_LEASE_CLEANUP_THRESHOLD_MILLIS,
-                DEFAULT_GARBAGE_LEASE_CLEANUP_THRESHOLD_MILLIS);
+                validateSequenceNumberBeforeCheckpointing, regionName, shutdownGraceMillis, billingMode);
     }
 
     /**
@@ -495,61 +490,15 @@ public class KinesisClientLibConfiguration {
                                          boolean validateSequenceNumberBeforeCheckpointing,
                                          String regionName,
                                          long shutdownGraceMillis,
-                                         BillingMode billingMode,
-                                         long leaseCleanupIntervalMillis,
-                                         long completedLeaseCleanupThresholdMillis,
-                                         long garbageLeaseCleanupThresholdMillis) {
-        // Check following values are greater than zero
-        checkIsValuePositive("FailoverTimeMillis", failoverTimeMillis);
-        checkIsValuePositive("IdleTimeBetweenReadsInMillis", idleTimeBetweenReadsInMillis);
-        checkIsValuePositive("ParentShardPollIntervalMillis", parentShardPollIntervalMillis);
-        checkIsValuePositive("ShardSyncIntervalMillis", shardSyncIntervalMillis);
-        checkIsValuePositive("MaxRecords", (long) maxRecords);
-        checkIsValuePositive("TaskBackoffTimeMillis", taskBackoffTimeMillis);
-        checkIsValuePositive("MetricsBufferTimeMills", metricsBufferTimeMillis);
-        checkIsValuePositive("MetricsMaxQueueSize", (long) metricsMaxQueueSize);
-        checkIsValuePositive("ShutdownGraceMillis", shutdownGraceMillis);
-        this.applicationName = applicationName;
-        this.tableName = applicationName;
-        this.streamName = streamName;
-        this.kinesisEndpoint = kinesisEndpoint;
-        this.dynamoDBEndpoint = dynamoDBEndpoint;
-        this.initialPositionInStream = initialPositionInStream;
-        this.kinesisCredentialsProvider = kinesisCredentialsProvider;
-        this.dynamoDBCredentialsProvider = dynamoDBCredentialsProvider;
-        this.cloudWatchCredentialsProvider = cloudWatchCredentialsProvider;
-        this.failoverTimeMillis = failoverTimeMillis;
-        this.maxRecords = maxRecords;
-        this.idleTimeBetweenReadsInMillis = idleTimeBetweenReadsInMillis;
-        this.callProcessRecordsEvenForEmptyRecordList = callProcessRecordsEvenForEmptyRecordList;
-        this.parentShardPollIntervalMillis = parentShardPollIntervalMillis;
-        this.shardSyncIntervalMillis = shardSyncIntervalMillis;
-        this.cleanupLeasesUponShardCompletion = cleanupTerminatedShardsBeforeExpiry;
-        this.workerIdentifier = workerId;
-        this.kinesisClientConfig = checkAndAppendKinesisClientLibUserAgent(kinesisClientConfig);
-        this.dynamoDBClientConfig = checkAndAppendKinesisClientLibUserAgent(dynamoDBClientConfig);
-        this.cloudWatchClientConfig = checkAndAppendKinesisClientLibUserAgent(cloudWatchClientConfig);
-        this.taskBackoffTimeMillis = taskBackoffTimeMillis;
-        this.metricsBufferTimeMillis = metricsBufferTimeMillis;
-        this.metricsMaxQueueSize = metricsMaxQueueSize;
-        this.metricsLevel = DEFAULT_METRICS_LEVEL;
-        this.metricsEnabledDimensions = DEFAULT_METRICS_ENABLED_DIMENSIONS;
-        this.validateSequenceNumberBeforeCheckpointing = validateSequenceNumberBeforeCheckpointing;
-        this.regionName = regionName;
-        this.maxLeasesForWorker = DEFAULT_MAX_LEASES_FOR_WORKER;
-        this.maxLeasesToStealAtOneTime = DEFAULT_MAX_LEASES_TO_STEAL_AT_ONE_TIME;
-        this.initialLeaseTableReadCapacity = DEFAULT_INITIAL_LEASE_TABLE_READ_CAPACITY;
-        this.initialLeaseTableWriteCapacity = DEFAULT_INITIAL_LEASE_TABLE_WRITE_CAPACITY;
-        this.initialPositionInStreamExtended =
-                InitialPositionInStreamExtended.newInitialPosition(initialPositionInStream);
-        this.skipShardSyncAtWorkerInitializationIfLeasesExist = DEFAULT_SKIP_SHARD_SYNC_AT_STARTUP_IF_LEASES_EXIST;
-        this.shardSyncStrategyType = DEFAULT_SHARD_SYNC_STRATEGY_TYPE;
-        this.shardPrioritization = DEFAULT_SHARD_PRIORITIZATION;
-        this.recordsFetcherFactory = new SimpleRecordsFetcherFactory();
-        this.billingMode = billingMode;
-        this.leaseCleanupIntervalMillis = leaseCleanupIntervalMillis;
-        this.completedLeaseCleanupThresholdMillis = completedLeaseCleanupThresholdMillis;
-        this.garbageLeaseCleanupThresholdMillis = garbageLeaseCleanupThresholdMillis;
+                                         BillingMode billingMode) {
+
+        this(applicationName, streamName, kinesisEndpoint, dynamoDBEndpoint, initialPositionInStream, kinesisCredentialsProvider,
+                dynamoDBCredentialsProvider, cloudWatchCredentialsProvider, failoverTimeMillis, workerId, maxRecords, idleTimeBetweenReadsInMillis,
+                callProcessRecordsEvenForEmptyRecordList, parentShardPollIntervalMillis, shardSyncIntervalMillis, cleanupTerminatedShardsBeforeExpiry,
+                kinesisClientConfig, dynamoDBClientConfig, cloudWatchClientConfig, taskBackoffTimeMillis, metricsBufferTimeMillis,
+                metricsMaxQueueSize, validateSequenceNumberBeforeCheckpointing, regionName, shutdownGraceMillis, billingMode,
+                new SimpleRecordsFetcherFactory(), DEFAULT_LEASE_CLEANUP_INTERVAL_MILLIS, DEFAULT_COMPLETED_LEASE_CLEANUP_THRESHOLD_MILLIS,
+                DEFAULT_GARBAGE_LEASE_CLEANUP_THRESHOLD_MILLIS);
     }
 
     /**
@@ -613,6 +562,91 @@ public class KinesisClientLibConfiguration {
             boolean validateSequenceNumberBeforeCheckpointing,
             String regionName,
             RecordsFetcherFactory recordsFetcherFactory) {
+
+
+        this(applicationName, streamName, kinesisEndpoint, dynamoDBEndpoint, initialPositionInStream, kinesisCredentialsProvider,
+                dynamoDBCredentialsProvider, cloudWatchCredentialsProvider, failoverTimeMillis, workerId, maxRecords, idleTimeBetweenReadsInMillis,
+                callProcessRecordsEvenForEmptyRecordList, parentShardPollIntervalMillis, shardSyncIntervalMillis, cleanupTerminatedShardsBeforeExpiry,
+                kinesisClientConfig, dynamoDBClientConfig, cloudWatchClientConfig, taskBackoffTimeMillis, metricsBufferTimeMillis,
+                metricsMaxQueueSize, validateSequenceNumberBeforeCheckpointing, regionName, 0, DEFAULT_DDB_BILLING_MODE,
+                recordsFetcherFactory, DEFAULT_LEASE_CLEANUP_INTERVAL_MILLIS, DEFAULT_COMPLETED_LEASE_CLEANUP_THRESHOLD_MILLIS,
+                DEFAULT_GARBAGE_LEASE_CLEANUP_THRESHOLD_MILLIS);
+    }
+
+    /**
+     * @param applicationName Name of the Kinesis application
+     *        By default the application name is included in the user agent string used to make AWS requests. This
+     *        can assist with troubleshooting (e.g. distinguish requests made by separate applications).
+     * @param streamName Name of the Kinesis stream
+     * @param kinesisEndpoint Kinesis endpoint
+     * @param dynamoDBEndpoint DynamoDB endpoint
+     * @param initialPositionInStream One of LATEST or TRIM_HORIZON. The KinesisClientLibrary will start fetching
+     *        records from that location in the stream when an application starts up for the first time and there
+     *        are no checkpoints. If there are checkpoints, then we start from the checkpoint position.
+     * @param kinesisCredentialsProvider Provides credentials used to access Kinesis
+     * @param dynamoDBCredentialsProvider Provides credentials used to access DynamoDB
+     * @param cloudWatchCredentialsProvider Provides credentials used to access CloudWatch
+     * @param failoverTimeMillis Lease duration (leases not renewed within this period will be claimed by others)
+     * @param workerId Used to distinguish different workers/processes of a Kinesis application
+     * @param maxRecords Max records to read per Kinesis getRecords() call
+     * @param idleTimeBetweenReadsInMillis Idle time between calls to fetch data from Kinesis
+     * @param callProcessRecordsEvenForEmptyRecordList Call the IRecordProcessor::processRecords() API even if
+     *        GetRecords returned an empty record list.
+     * @param parentShardPollIntervalMillis Wait for this long between polls to check if parent shards are done
+     * @param shardSyncIntervalMillis Time between tasks to sync leases and Kinesis shards
+     * @param cleanupTerminatedShardsBeforeExpiry Clean up shards we've finished processing (don't wait for expiration
+     *        in Kinesis)
+     * @param kinesisClientConfig Client Configuration used by Kinesis client
+     * @param dynamoDBClientConfig Client Configuration used by DynamoDB client
+     * @param cloudWatchClientConfig Client Configuration used by CloudWatch client
+     * @param taskBackoffTimeMillis Backoff period when tasks encounter an exception
+     * @param metricsBufferTimeMillis Metrics are buffered for at most this long before publishing to CloudWatch
+     * @param metricsMaxQueueSize Max number of metrics to buffer before publishing to CloudWatch
+     * @param validateSequenceNumberBeforeCheckpointing whether KCL should validate client provided sequence numbers
+     *        with a call to Amazon Kinesis before checkpointing for calls to
+     *        {@link RecordProcessorCheckpointer#checkpoint(String)}
+     * @param regionName The region name for the service
+     * @param shutdownGraceMillis Time before gracefully shutdown forcefully terminates
+     * @param billingMode The DDB Billing mode to set for lease table creation.
+     * @param recordsFetcherFactory Factory to create the records fetcher to retrieve data from Kinesis for a given shard.
+     * @param leaseCleanupIntervalMillis Rate at which to run lease cleanup thread in
+     *        {@link com.amazonaws.services.kinesis.leases.impl.LeaseCleanupManager}
+     * @param completedLeaseCleanupThresholdMillis Threshold in millis at which to check if there are any completed leases
+     *        (leases for shards which have been closed as a result of a resharding operation) that need to be cleaned up.
+     * @param garbageLeaseCleanupThresholdMillis Threshold in millis at which to check if there are any garbage leases
+     *        (leases for shards which no longer exist in the stream) that need to be cleaned up.
+     */
+    public KinesisClientLibConfiguration(String applicationName,
+                                         String streamName,
+                                         String kinesisEndpoint,
+                                         String dynamoDBEndpoint,
+                                         InitialPositionInStream initialPositionInStream,
+                                         AWSCredentialsProvider kinesisCredentialsProvider,
+                                         AWSCredentialsProvider dynamoDBCredentialsProvider,
+                                         AWSCredentialsProvider cloudWatchCredentialsProvider,
+                                         long failoverTimeMillis,
+                                         String workerId,
+                                         int maxRecords,
+                                         long idleTimeBetweenReadsInMillis,
+                                         boolean callProcessRecordsEvenForEmptyRecordList,
+                                         long parentShardPollIntervalMillis,
+                                         long shardSyncIntervalMillis,
+                                         boolean cleanupTerminatedShardsBeforeExpiry,
+                                         ClientConfiguration kinesisClientConfig,
+                                         ClientConfiguration dynamoDBClientConfig,
+                                         ClientConfiguration cloudWatchClientConfig,
+                                         long taskBackoffTimeMillis,
+                                         long metricsBufferTimeMillis,
+                                         int metricsMaxQueueSize,
+                                         boolean validateSequenceNumberBeforeCheckpointing,
+                                         String regionName,
+                                         long shutdownGraceMillis,
+                                         BillingMode billingMode,
+                                         RecordsFetcherFactory recordsFetcherFactory,
+                                         long leaseCleanupIntervalMillis,
+                                         long completedLeaseCleanupThresholdMillis,
+                                         long garbageLeaseCleanupThresholdMillis) {
+
         // Check following values are greater than zero
         checkIsValuePositive("FailoverTimeMillis", failoverTimeMillis);
         checkIsValuePositive("IdleTimeBetweenReadsInMillis", idleTimeBetweenReadsInMillis);
@@ -659,7 +693,12 @@ public class KinesisClientLibConfiguration {
         this.shardSyncStrategyType = DEFAULT_SHARD_SYNC_STRATEGY_TYPE;
         this.shardPrioritization = DEFAULT_SHARD_PRIORITIZATION;
         this.recordsFetcherFactory = recordsFetcherFactory;
+        this.leaseCleanupIntervalMillis = leaseCleanupIntervalMillis;
+        this.completedLeaseCleanupThresholdMillis = completedLeaseCleanupThresholdMillis;
+        this.garbageLeaseCleanupThresholdMillis = garbageLeaseCleanupThresholdMillis;
         this.shutdownGraceMillis = shutdownGraceMillis;
+        this.billingMode = billingMode;
+
     }
 
     // Check if value is positive, otherwise throw an exception
@@ -876,16 +915,16 @@ public class KinesisClientLibConfiguration {
     }
 
     /**
-     * @return Threshold for how long a lease can be pending deletion before checking if the lease can be deleted as
-     * a completed shard.
+     * @return Threshold in millis at which to check if there are any completed leases (leases for shards which have been
+     * closed as a result of a resharding operation) that need to be cleaned up.
      */
     public long completedLeaseCleanupThresholdMillis() {
         return completedLeaseCleanupThresholdMillis;
     }
 
     /**
-     * @return Threshold for how long a lease can be pending deletion before checking if the lease can be deleted as
-     * a garbage shard.
+     * @return Threshold in millis at which to check if there are any garbage leases (leases for shards which no longer
+     * exist in the stream) that need to be cleaned up.
      */
     public long garbageLeaseCleanupThresholdMillis() {
         return garbageLeaseCleanupThresholdMillis;
@@ -1544,7 +1583,8 @@ public class KinesisClientLibConfiguration {
     }
 
     /**
-     * Threshold for how long a lease can be pending deletion before checking if the lease can be deleted as a completed shard.
+     * Threshold in millis at which to check if there are any completed leases (leases for shards which have been
+     * closed as a result of a resharding operation) that need to be cleaned up.
      * @param completedLeaseCleanupThresholdMillis
      * @return
      */
@@ -1555,7 +1595,8 @@ public class KinesisClientLibConfiguration {
     }
 
     /**
-     * Threshold for how long a lease can be pending deletion before checking if the lease can be deleted as a garbage shard.
+     * Threshold in millis at which to check if there are any garbage leases (leases for shards which no longer exist
+     * in the stream) that need to be cleaned up.
      * @param garbageLeaseCleanupThresholdMillis
      * @return
      */

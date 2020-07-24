@@ -55,6 +55,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
 import com.amazonaws.services.kinesis.leases.impl.LeaseCleanupManager;
+import com.amazonaws.services.kinesis.leases.impl.LeaseManager;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.hamcrest.Description;
@@ -130,8 +131,6 @@ public class ShardConsumerTest {
     private ShutdownNotification shutdownNotification;
     @Mock
     ShardSyncStrategy shardSyncStrategy;
-    @Mock
-    LeaseCleanupManager leaseCleanupManager;
 
     @Before
     public void setup() {
@@ -141,6 +140,7 @@ public class ShardConsumerTest {
         recordsFetcherFactory = spy(new SimpleRecordsFetcherFactory());
         when(config.getRecordsFetcherFactory()).thenReturn(recordsFetcherFactory);
         when(config.getLogWarningForTaskAfterMillis()).thenReturn(Optional.empty());
+        when(leaseCoordinator.getLeaseManager()).thenReturn(leaseManager);
     }
 
     /**
@@ -177,8 +177,7 @@ public class ShardConsumerTest {
                         KinesisClientLibConfiguration.DEFAULT_SKIP_SHARD_SYNC_AT_STARTUP_IF_LEASES_EXIST,
                         config,
                         shardSyncer,
-                        shardSyncStrategy,
-                        leaseCleanupManager);
+                        shardSyncStrategy);
         assertThat(consumer.getCurrentState(), is(equalTo(ConsumerStates.ShardConsumerState.WAITING_ON_PARENT_SHARDS)));
         consumer.consumeShard(); // initialize
         Thread.sleep(50L);
@@ -228,8 +227,7 @@ public class ShardConsumerTest {
                         KinesisClientLibConfiguration.DEFAULT_SKIP_SHARD_SYNC_AT_STARTUP_IF_LEASES_EXIST,
                         config,
                         shardSyncer,
-                        shardSyncStrategy,
-                        leaseCleanupManager);
+                        shardSyncStrategy);
 
         assertThat(consumer.getCurrentState(), is(equalTo(ConsumerStates.ShardConsumerState.WAITING_ON_PARENT_SHARDS)));
         consumer.consumeShard(); // initialize
@@ -273,8 +271,7 @@ public class ShardConsumerTest {
                         KinesisClientLibConfiguration.DEFAULT_SKIP_SHARD_SYNC_AT_STARTUP_IF_LEASES_EXIST,
                         config,
                         shardSyncer,
-                        shardSyncStrategy,
-                        leaseCleanupManager);
+                        shardSyncStrategy);
 
         final ExtendedSequenceNumber checkpointSequenceNumber = new ExtendedSequenceNumber("123");
         final ExtendedSequenceNumber pendingCheckpointSequenceNumber = null;
@@ -398,8 +395,7 @@ public class ShardConsumerTest {
                         Optional.empty(),
                         config,
                         shardSyncer,
-                        shardSyncStrategy,
-                        leaseCleanupManager);
+                        shardSyncStrategy);
 
         assertThat(consumer.getCurrentState(), is(equalTo(ConsumerStates.ShardConsumerState.WAITING_ON_PARENT_SHARDS)));
         consumer.consumeShard(); // check on parent shards
@@ -482,6 +478,8 @@ public class ShardConsumerTest {
         when(leaseCoordinator.getLeaseManager()).thenReturn(leaseManager);
         when(leaseManager.getLease(eq(parentShardId))).thenReturn(parentLease);
         when(parentLease.getCheckpoint()).thenReturn(ExtendedSequenceNumber.TRIM_HORIZON);
+        when(recordProcessorCheckpointer.getLastCheckpointValue()).thenReturn(ExtendedSequenceNumber.SHARD_END);
+        when(streamConfig.getStreamProxy()).thenReturn(streamProxy);
 
         final ShardConsumer consumer =
                 new ShardConsumer(shardInfo,
@@ -501,8 +499,7 @@ public class ShardConsumerTest {
                         Optional.empty(),
                         config,
                         shardSyncer,
-                        shardSyncStrategy,
-                        leaseCleanupManager);
+                        shardSyncStrategy);
 
         assertThat(consumer.getCurrentState(), is(equalTo(ConsumerStates.ShardConsumerState.WAITING_ON_PARENT_SHARDS)));
         verify(parentLease, times(0)).getCheckpoint();
@@ -515,6 +512,9 @@ public class ShardConsumerTest {
         assertThat(consumer.getShutdownReason(), equalTo(ShutdownReason.REQUESTED));
         assertThat(consumer.getCurrentState(), is(equalTo(ConsumerStates.ShardConsumerState.WAITING_ON_PARENT_SHARDS)));
         consumer.consumeShard();
+        assertThat(consumer.getCurrentState(), is(equalTo(ConsumerStates.ShardConsumerState.SHUTTING_DOWN)));
+        consumer.notifyShutdownRequested(shutdownNotification);
+        consumer.beginShutdown();
         assertThat(consumer.getCurrentState(), is(equalTo(ConsumerStates.ShardConsumerState.SHUTDOWN_COMPLETE)));
         assertThat(consumer.isShutdown(), is(true));
         verify(shutdownNotification, times(1)).shutdownComplete();
@@ -614,8 +614,7 @@ public class ShardConsumerTest {
                         Optional.empty(),
                         config,
                         shardSyncer,
-                        shardSyncStrategy,
-                        leaseCleanupManager);
+                        shardSyncStrategy);
 
         when(leaseCoordinator.updateLease(any(KinesisClientLease.class), any(UUID.class))).thenReturn(true);
         assertThat(consumer.getCurrentState(), is(equalTo(ConsumerStates.ShardConsumerState.WAITING_ON_PARENT_SHARDS)));
@@ -757,8 +756,7 @@ public class ShardConsumerTest {
                         Optional.empty(),
                         config,
                         shardSyncer,
-                        shardSyncStrategy,
-                        leaseCleanupManager);
+                        shardSyncStrategy);
 
         List<String> parentShardIds = new ArrayList<>();
         parentShardIds.add(shardInfo.getShardId());
@@ -905,8 +903,7 @@ public class ShardConsumerTest {
                         Optional.empty(),
                         config,
                         shardSyncer,
-                        shardSyncStrategy,
-                        leaseCleanupManager);
+                        shardSyncStrategy);
 
         assertThat(consumer.getCurrentState(), is(equalTo(ConsumerStates.ShardConsumerState.WAITING_ON_PARENT_SHARDS)));
         consumer.consumeShard(); // check on parent shards
@@ -978,8 +975,7 @@ public class ShardConsumerTest {
                         KinesisClientLibConfiguration.DEFAULT_SKIP_SHARD_SYNC_AT_STARTUP_IF_LEASES_EXIST,
                         config,
                         shardSyncer,
-                        shardSyncStrategy,
-                        leaseCleanupManager);
+                        shardSyncStrategy);
 
         GetRecordsCache getRecordsCache = spy(consumer.getGetRecordsCache());
 
@@ -1036,8 +1032,7 @@ public class ShardConsumerTest {
                         Optional.empty(),
                         config,
                         shardSyncer,
-                        shardSyncStrategy,
-                        leaseCleanupManager);
+                        shardSyncStrategy);
 
         assertEquals(shardConsumer.getGetRecordsCache().getGetRecordsRetrievalStrategy().getClass(),
                 SynchronousGetRecordsRetrievalStrategy.class);
@@ -1069,8 +1064,7 @@ public class ShardConsumerTest {
                         Optional.of(2),
                         config,
                         shardSyncer,
-                        shardSyncStrategy,
-                        leaseCleanupManager);
+                        shardSyncStrategy);
 
         assertEquals(shardConsumer.getGetRecordsCache().getGetRecordsRetrievalStrategy().getClass(),
                 AsynchronousGetRecordsRetrievalStrategy.class);
@@ -1111,8 +1105,7 @@ public class ShardConsumerTest {
                 KinesisClientLibConfiguration.DEFAULT_SKIP_SHARD_SYNC_AT_STARTUP_IF_LEASES_EXIST,
                 config,
                 shardSyncer,
-                shardSyncStrategy,
-                leaseCleanupManager);
+                shardSyncStrategy);
         shardConsumer.consumeShard();
 
         Thread.sleep(sleepTime);
