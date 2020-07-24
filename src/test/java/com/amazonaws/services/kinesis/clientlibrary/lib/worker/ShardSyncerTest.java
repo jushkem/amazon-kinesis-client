@@ -420,6 +420,7 @@ public class ShardSyncerTest {
                 cleanupLeasesOfCompletedShards, true, shards);
         List<KinesisClientLease> newLeases = leaseManager.listLeases();
         Set<String> expectedLeaseShardIds = new HashSet<String>();
+        expectedLeaseShardIds.add("shardId-1000"); // dummy lease will still be in the table.
         expectedLeaseShardIds.add("shardId-4");
         expectedLeaseShardIds.add("shardId-5");
         expectedLeaseShardIds.add("shardId-8");
@@ -689,31 +690,6 @@ public class ShardSyncerTest {
         }
 
         dataFile.delete();
-    }
-
-    /**
-     * Test bootstrapShardLeases() - cleanup garbage leases.
-     *
-     * @throws ProvisionedThroughputException
-     * @throws InvalidStateException
-     * @throws DependencyException
-     * @throws IOException
-     * @throws KinesisClientLibIOException
-     */
-    @Test
-    public final void testBootstrapShardLeasesCleanupGarbage()
-            throws DependencyException, InvalidStateException, ProvisionedThroughputException, IOException,
-            KinesisClientLibIOException {
-        String garbageShardId = "shardId-garbage-001";
-        KinesisClientLease garbageLease = shardSyncer.newKCLLease(ShardObjectHelper.newShard(garbageShardId,
-                null,
-                null,
-                ShardObjectHelper.newSequenceNumberRange("101", null)));
-        garbageLease.setCheckpoint(new ExtendedSequenceNumber("999"));
-        leaseManager.createLeaseIfNotExists(garbageLease);
-        Assert.assertEquals(garbageShardId, leaseManager.getLease(garbageShardId).getLeaseKey());
-        testBootstrapShardLeasesAtStartingPosition(INITIAL_POSITION_LATEST);
-        Assert.assertNull(leaseManager.getLease(garbageShardId));
     }
 
     private void testBootstrapShardLeasesAtStartingPosition(InitialPositionInStreamExtended initialPosition)

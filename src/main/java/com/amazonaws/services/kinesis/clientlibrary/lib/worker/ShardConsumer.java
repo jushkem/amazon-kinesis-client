@@ -223,6 +223,7 @@ class ShardConsumer {
      * @param shardSyncer shardSyncer instance used to check and create new leases
      * @param leaseCleanupManager used to clean up leases in lease table.
      */
+    @Deprecated
     ShardConsumer(ShardInfo shardInfo,
             StreamConfig streamConfig,
             ICheckpoint checkpoint,
