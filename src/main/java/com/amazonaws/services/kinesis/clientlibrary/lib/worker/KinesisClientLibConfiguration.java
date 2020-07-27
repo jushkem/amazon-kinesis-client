@@ -913,14 +913,14 @@ public class KinesisClientLibConfiguration {
     }
 
     /**
-     * @return Rate at which to run lease cleanup thread in {@link com.amazonaws.services.kinesis.leases.impl.LeaseCleanupManager}
+     * @return Interval in millis at which to run lease cleanup thread in {@link com.amazonaws.services.kinesis.leases.impl.LeaseCleanupManager}
      */
     public long leaseCleanupIntervalMillis() {
         return leaseCleanupIntervalMillis;
     }
 
     /**
-     * @return Threshold in millis at which to check if there are any completed leases (leases for shards which have been
+     * @return Interval in millis at which to check if there are any completed leases (leases for shards which have been
      * closed as a result of a resharding operation) that need to be cleaned up.
      */
     public long completedLeaseCleanupThresholdMillis() {
@@ -928,7 +928,7 @@ public class KinesisClientLibConfiguration {
     }
 
     /**
-     * @return Threshold in millis at which to check if there are any garbage leases (leases for shards which no longer
+     * @return Interval in millis at which to check if there are any garbage leases (leases for shards which no longer
      * exist in the stream) that need to be cleaned up.
      */
     public long garbageLeaseCleanupThresholdMillis() {
