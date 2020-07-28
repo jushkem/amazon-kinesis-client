@@ -114,13 +114,16 @@ public class LeaseCleanupManager {
      * {@link LeaseCleanupManager#leaseCleanupIntervalMillis}
      */
     public void start() {
-        LOG.debug("Starting lease cleanup thread.");
-        isRunning = true;
-        completedLeaseStopwatch.start();
-        garbageLeaseStopwatch.start();
-
-        deletionThreadPool.scheduleAtFixedRate(new LeaseCleanupThread(), INITIAL_DELAY, leaseCleanupIntervalMillis,
-                TimeUnit.MILLISECONDS);
+        if (!isRunning) {
+            LOG.info("Starting lease cleanup thread.");
+            completedLeaseStopwatch.reset().start();
+            garbageLeaseStopwatch.reset().start();
+            deletionThreadPool.scheduleAtFixedRate(new LeaseCleanupThread(), INITIAL_DELAY, leaseCleanupIntervalMillis,
+                    TimeUnit.MILLISECONDS);
+            isRunning = true;
+        } else {
+            LOG.info("Lease cleanup thread is already running, no need to start.");
+        }
     }
 
     /**
