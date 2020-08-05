@@ -18,10 +18,13 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.IntStream;
+
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.Mockito;
 import org.mockito.runners.MockitoJUnitRunner;
 import software.amazon.awssdk.services.kinesis.model.HashKeyRange;
 import software.amazon.kinesis.common.HashKeyRangeForLease;
@@ -35,8 +38,10 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.eq;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 @RunWith(MockitoJUnitRunner.class)
@@ -342,5 +347,20 @@ public class DynamoDBLeaseRefresherIntegrationTest extends LeaseIntegrationTest 
 
         verify(tableCreatorCallback).performAction(
                 eq(TableCreatorCallbackInput.builder().dynamoDbClient(ddbClient).tableName(tableName).build()));
+    }
+
+    @Test
+    public void testCacheNotUpdatedWhenFresh() throws Exception {
+        final TestHarnessBuilder builder = new TestHarnessBuilder(leaseRefresher);
+
+//        Mockito.when(leaseRefresher.cacheIsStillFresh()).thenReturn(true);
+
+        IntStream.range(0, 10).forEach(i -> builder.withLease(Integer.toString(i)));
+
+        final Collection<Lease> expected = builder.build().values();
+        final boolean leaseTableEmpty = leaseRefresher.isLeaseTableEmpty();
+        verify(leaseRefresher, never()).updateCachedLeaseTable(any(List.class));
+        assertFalse(leaseTableEmpty);
+
     }
 }

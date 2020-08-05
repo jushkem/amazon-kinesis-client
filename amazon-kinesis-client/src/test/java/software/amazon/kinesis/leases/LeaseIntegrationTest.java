@@ -20,12 +20,16 @@ import org.junit.runner.Description;
 import org.mockito.Mock;
 
 import lombok.extern.slf4j.Slf4j;
+import org.mockito.Spy;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient;
 import software.amazon.awssdk.services.dynamodb.model.BillingMode;
 import software.amazon.kinesis.leases.dynamodb.DynamoDBLeaseRefresher;
 import software.amazon.kinesis.leases.dynamodb.DynamoDBLeaseSerializer;
 import software.amazon.kinesis.leases.dynamodb.TableCreatorCallback;
+
+import java.util.HashMap;
+import java.util.Map;
 
 @Slf4j
 public class LeaseIntegrationTest {
@@ -39,6 +43,8 @@ public class LeaseIntegrationTest {
 
     @Mock
     protected TableCreatorCallback tableCreatorCallback;
+    @Mock
+    protected Map<String, Lease> cachedLeaseTable = new HashMap<>();
 
     @Rule
     public TestWatcher watcher = new TestWatcher() {
@@ -74,7 +80,7 @@ public class LeaseIntegrationTest {
 
     protected DynamoDBLeaseRefresher getLeaseRefresher() {
         return new DynamoDBLeaseRefresher(tableName, ddbClient, leaseSerializer, true,
-                tableCreatorCallback, LeaseManagementConfig.DEFAULT_REQUEST_TIMEOUT, BillingMode.PROVISIONED);
+                tableCreatorCallback, LeaseManagementConfig.DEFAULT_REQUEST_TIMEOUT, BillingMode.PROVISIONED, cachedLeaseTable);
     }
 
 }
