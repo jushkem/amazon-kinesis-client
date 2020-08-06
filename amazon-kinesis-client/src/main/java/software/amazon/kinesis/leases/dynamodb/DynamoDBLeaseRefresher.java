@@ -17,12 +17,10 @@ package software.amazon.kinesis.leases.dynamodb;
 import com.google.common.collect.ImmutableMap;
 
 import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -59,7 +57,6 @@ import software.amazon.kinesis.leases.Lease;
 import software.amazon.kinesis.leases.LeaseManagementConfig;
 import software.amazon.kinesis.leases.LeaseRefresher;
 import software.amazon.kinesis.leases.LeaseSerializer;
-import software.amazon.kinesis.leases.MultiStreamLease;
 import software.amazon.kinesis.leases.UpdateField;
 import software.amazon.kinesis.leases.exceptions.DependencyException;
 import software.amazon.kinesis.leases.exceptions.InvalidStateException;
@@ -82,14 +79,9 @@ public class DynamoDBLeaseRefresher implements LeaseRefresher {
 
     private final Duration dynamoDbRequestTimeout;
     private final BillingMode billingMode;
+    private final DynamoDBLeaseCache dynamoDBLeaseCache;
 
     private boolean newTableCreated = false;
-
-    private volatile Map<String, Lease> cachedLeaseTable;
-    private volatile Instant lastCacheUpdateTime;
-
-    public static final String SENTINEL_STREAM_NAME = "SENTINEL_STREAM_NAME";
-    private static final Duration LEASE_TABLE_CACHE_ALLOWED_STALENESS_SECONDS = Duration.ofSeconds(30);
     private static final String STREAM_NAME = "streamName";
     private static final String DDB_STREAM_NAME = ":streamName";
 
@@ -158,7 +150,8 @@ public class DynamoDBLeaseRefresher implements LeaseRefresher {
                                   final LeaseSerializer serializer, final boolean consistentReads,
                                   @NonNull final TableCreatorCallback tableCreatorCallback, Duration dynamoDbRequestTimeout,
                                   final BillingMode billingMode) {
-        this(table, dynamoDBClient, serializer, consistentReads, tableCreatorCallback, dynamoDbRequestTimeout, billingMode, new HashMap<>());
+        this(table, dynamoDBClient, serializer, consistentReads, tableCreatorCallback, dynamoDbRequestTimeout,
+                billingMode, new DynamoDBLeaseCache(new HashMap<>()));
     }
 
 
@@ -175,7 +168,7 @@ public class DynamoDBLeaseRefresher implements LeaseRefresher {
     public DynamoDBLeaseRefresher(final String table, final DynamoDbAsyncClient dynamoDBClient,
                                   final LeaseSerializer serializer, final boolean consistentReads,
                                   @NonNull final TableCreatorCallback tableCreatorCallback, Duration dynamoDbRequestTimeout,
-                                  final BillingMode billingMode, Map<String, Lease> cachedLeaseTable) {
+                                  final BillingMode billingMode, DynamoDBLeaseCache dynamoDBLeaseCache) {
         this.table = table;
         this.dynamoDBClient = dynamoDBClient;
         this.serializer = serializer;
@@ -183,8 +176,7 @@ public class DynamoDBLeaseRefresher implements LeaseRefresher {
         this.tableCreatorCallback = tableCreatorCallback;
         this.dynamoDbRequestTimeout = dynamoDbRequestTimeout;
         this.billingMode = billingMode;
-        this.cachedLeaseTable = new HashMap<>();
-        this.lastCacheUpdateTime = Instant.now();
+        this.dynamoDBLeaseCache = dynamoDBLeaseCache;
     }
 
     /**
@@ -351,8 +343,9 @@ public class DynamoDBLeaseRefresher implements LeaseRefresher {
     @Override
     public boolean isLeaseTableEmptyForStreamIdentifier(StreamIdentifier streamIdentifier)
             throws DependencyException, ProvisionedThroughputException, InvalidStateException {
-        final String streamName = Optional.ofNullable(streamIdentifier).map(s -> s.serialize()).orElse(SENTINEL_STREAM_NAME);
-        if (cacheIsStillFresh() && cachedLeaseTable.containsKey(streamName)) {
+        // Check in-memory cache for leases under the given stream identifier. If we have a cache miss or
+        // the cache is stale, hit DDB directly and update the cache.
+        if (dynamoDBLeaseCache.hasLeaseForStream(streamIdentifier) && dynamoDBLeaseCache.cacheIsStillFresh()) {
             return false;
         }
 
@@ -387,6 +380,11 @@ public class DynamoDBLeaseRefresher implements LeaseRefresher {
      */
     List<Lease> list(Integer limit, Integer maxPages, StreamIdentifier streamIdentifier) throws DependencyException, InvalidStateException,
             ProvisionedThroughputException {
+
+        if (dynamoDBLeaseCache.cacheIsStillFresh() && dynamoDBLeaseCache.hasLeaseForStream(streamIdentifier)) {
+            log.debug("Fetching leases from cache.");
+            return dynamoDBLeaseCache.listLeasesForStream(streamIdentifier);
+        }
 
         log.debug("Listing leases from table {}", table);
 
@@ -432,8 +430,8 @@ public class DynamoDBLeaseRefresher implements LeaseRefresher {
                         scanResult = FutureUtils.resolveOrCancelFuture(dynamoDBClient.scan(scanRequest), dynamoDbRequestTimeout);
                     }
                 }
+                dynamoDBLeaseCache.updateCachedLeaseTable(result);
                 log.debug("Listed {} leases from table {}", result.size(), table);
-                updateCachedLeaseTable(result);
                 return result;
             } catch (ExecutionException e) {
                 throw exceptionManager.apply(e.getCause());
@@ -448,37 +446,6 @@ public class DynamoDBLeaseRefresher implements LeaseRefresher {
         } catch (DynamoDbException | TimeoutException e) {
             throw new DependencyException(e);
         }
-    }
-
-
-    /**
-     * Checks if the cached lease table is still within the max allowed staleness period. Package access for unit testing.
-     * @return
-     */
-    boolean cacheIsStillFresh() {
-        final Duration secondsSinceLastCacheUpdate = Duration.between(lastCacheUpdateTime, Instant.now());
-        return secondsSinceLastCacheUpdate.compareTo(LEASE_TABLE_CACHE_ALLOWED_STALENESS_SECONDS) < 0;
-    }
-
-    /**
-     * Update cached lease table with new leases pulled from DDB. Package access for testing.
-     * @param newLeases
-     * @throws InvalidStateException
-     */
-    void updateCachedLeaseTable(List<Lease> newLeases) throws InvalidStateException {
-        cachedLeaseTable.clear();
-        for (Lease l : newLeases) {
-            if (l instanceof MultiStreamLease) {
-                final String streamName = ((MultiStreamLease) l).streamIdentifier();
-                cachedLeaseTable.put(streamName, l);
-            } else if (l instanceof Lease) {
-                cachedLeaseTable.put(SENTINEL_STREAM_NAME, l);
-            } else {
-                throw new InvalidStateException("Retrieved lease which was not a valid lease - " + l.toString());
-            }
-
-        }
-        lastCacheUpdateTime = Instant.now();
     }
 
     /**

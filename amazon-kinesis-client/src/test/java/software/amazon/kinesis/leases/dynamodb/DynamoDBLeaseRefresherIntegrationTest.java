@@ -18,16 +18,15 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.IntStream;
 
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.mockito.Mockito;
 import org.mockito.runners.MockitoJUnitRunner;
 import software.amazon.awssdk.services.kinesis.model.HashKeyRange;
 import software.amazon.kinesis.common.HashKeyRangeForLease;
+import software.amazon.kinesis.common.StreamIdentifier;
 import software.amazon.kinesis.leases.Lease;
 import software.amazon.kinesis.leases.LeaseIntegrationTest;
 import software.amazon.kinesis.leases.UpdateField;
@@ -42,13 +41,18 @@ import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.eq;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @RunWith(MockitoJUnitRunner.class)
 public class DynamoDBLeaseRefresherIntegrationTest extends LeaseIntegrationTest {
 
     @Before
     public void setup() {
+        leaseRefresher = getLeaseRefresher();
+        reset(dynamoDBLeaseCache);
         doNothing().when(tableCreatorCallback).performAction(
                 eq(TableCreatorCallbackInput.builder().dynamoDbClient(ddbClient).tableName(tableName).build()));
     }
@@ -350,17 +354,55 @@ public class DynamoDBLeaseRefresherIntegrationTest extends LeaseIntegrationTest 
     }
 
     @Test
-    public void testCacheNotUpdatedWhenFresh() throws Exception {
-        final TestHarnessBuilder builder = new TestHarnessBuilder(leaseRefresher);
+    public void testCacheNotUpdatedWhenCacheHitAndFresh() throws Exception {
+        when(dynamoDBLeaseCache.hasLeaseForStream(any(StreamIdentifier.class))).thenReturn(true);
+        when(dynamoDBLeaseCache.cacheIsStillFresh()).thenReturn(true);
 
-//        Mockito.when(leaseRefresher.cacheIsStillFresh()).thenReturn(true);
+        leaseRefresher.isLeaseTableEmpty();
 
-        IntStream.range(0, 10).forEach(i -> builder.withLease(Integer.toString(i)));
-
-        final Collection<Lease> expected = builder.build().values();
-        final boolean leaseTableEmpty = leaseRefresher.isLeaseTableEmpty();
-        verify(leaseRefresher, never()).updateCachedLeaseTable(any(List.class));
-        assertFalse(leaseTableEmpty);
-
+        verify(dynamoDBLeaseCache, times(1)).cacheIsStillFresh();
+        verify(dynamoDBLeaseCache, never()).listLeasesForStream(any(StreamIdentifier.class));
+        verify(dynamoDBLeaseCache, never()).updateCachedLeaseTable(any(List.class));
     }
+
+    @Test
+    public void testCacheUpdatedWhenCacheHitAndStale() throws Exception {
+        TestHarnessBuilder builder = new TestHarnessBuilder(leaseRefresher);
+        Lease lease = builder.withLease("1").build().get("1");
+
+        when(dynamoDBLeaseCache.listLeasesForStream(any(StreamIdentifier.class))).thenReturn(Collections.singletonList(lease));
+        when(dynamoDBLeaseCache.hasLeaseForStream(any(StreamIdentifier.class))).thenReturn(true);
+        when(dynamoDBLeaseCache.cacheIsStillFresh()).thenReturn(false);
+
+        leaseRefresher.isLeaseTableEmpty();
+
+        verify(dynamoDBLeaseCache, never()).listLeasesForStream(any(StreamIdentifier.class));
+        verify(dynamoDBLeaseCache, times(2)).cacheIsStillFresh();
+        verify(dynamoDBLeaseCache, times(1)).updateCachedLeaseTable(any(List.class));
+    }
+
+    @Test
+    public void testCacheUpdatedWhenCacheMissAndStale() throws Exception {
+        when(dynamoDBLeaseCache.listLeasesForStream(any(StreamIdentifier.class))).thenReturn(Collections.emptyList());
+        when(dynamoDBLeaseCache.hasLeaseForStream(any(StreamIdentifier.class))).thenReturn(false);
+        when(dynamoDBLeaseCache.cacheIsStillFresh()).thenReturn(false);
+
+        leaseRefresher.isLeaseTableEmpty();
+        verify(dynamoDBLeaseCache, never()).listLeasesForStream(any(StreamIdentifier.class));
+        verify(dynamoDBLeaseCache, times(1)).cacheIsStillFresh();
+        verify(dynamoDBLeaseCache, times(1)).updateCachedLeaseTable(any(List.class));
+    }
+
+    @Test
+    public void testCacheUpdatedWhenCacheMissAndFresh() throws Exception {
+        when(dynamoDBLeaseCache.listLeasesForStream(any(StreamIdentifier.class))).thenReturn(Collections.emptyList());
+        when(dynamoDBLeaseCache.hasLeaseForStream(any(StreamIdentifier.class))).thenReturn(false);
+        when(dynamoDBLeaseCache.cacheIsStillFresh()).thenReturn(true);
+
+        leaseRefresher.isLeaseTableEmpty();
+        verify(dynamoDBLeaseCache, never()).listLeasesForStream(any(StreamIdentifier.class));
+        verify(dynamoDBLeaseCache, times(1)).cacheIsStillFresh();
+        verify(dynamoDBLeaseCache, times(1)).updateCachedLeaseTable(any(List.class));
+    }
+
 }
