@@ -164,6 +164,7 @@ public class DynamoDBLeaseRefresher implements LeaseRefresher {
      * @param tableCreatorCallback
      * @param dynamoDbRequestTimeout
      * @param billingMode
+     * @param dynamoDBLeaseCache
      */
     public DynamoDBLeaseRefresher(final String table, final DynamoDbAsyncClient dynamoDBClient,
                                   final LeaseSerializer serializer, final boolean consistentReads,
